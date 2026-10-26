@@ -60,6 +60,7 @@ public sealed class CollectionContextService
                 Name = boxSet.Name ?? string.Empty,
                 SortTitle = boxSet.ForcedSortName ?? string.Empty,
                 ContentRating = boxSet.OfficialRating ?? string.Empty,
+                CommunityRating = boxSet.CommunityRating,
                 Overview = boxSet.Overview ?? string.Empty,
                 Genres = Normalize(boxSet.Genres),
                 Tags = Normalize(boxSet.Tags),
@@ -107,12 +108,22 @@ public sealed class CollectionContextService
             .ThenBy(item => item.SortName, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         var boundedMaximum = Math.Clamp(maximumItems, 1, 1000);
+        var communityRatings = ordered
+            .Select(item => item.CommunityRating)
+            .Where(rating => rating is >= 0 and <= 10)
+            .Select(rating => rating!.Value)
+            .ToArray();
 
         return new CollectionContext
         {
             CollectionName = LimitText(collection.Name, 500),
             CurrentSortTitle = LimitText(collection.ForcedSortName, 500),
             CurrentContentRating = LimitText(collection.OfficialRating, 100),
+            CurrentCommunityRating = collection.CommunityRating,
+            AverageCommunityRating = communityRatings.Length == 0
+                ? null
+                : (float)Math.Round(communityRatings.Average(), 1, MidpointRounding.AwayFromZero),
+            CommunityRatingItemCount = communityRatings.Length,
             CurrentOverview = LimitText(collection.Overview, 5000),
             CurrentGenres = Normalize(collection.Genres),
             CurrentTags = Normalize(collection.Tags),
@@ -168,6 +179,7 @@ public sealed class CollectionContextService
             Name = LimitText(item.Name, 500),
             SortTitle = LimitText(item.ForcedSortName, 500),
             ContentRating = LimitText(item.OfficialRating, 100),
+            CommunityRating = item.CommunityRating,
             Year = item.ProductionYear,
             Overview = LimitText(item.Overview, 3000),
             Genres = Normalize(item.Genres),

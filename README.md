@@ -7,9 +7,10 @@ The initial release targets Jellyfin 12.3 and .NET 10.
 ## What it does
 
 - Lists collections in an embedded Jellyfin dashboard.
-- Generates metadata for one selected collection at a time.
+- Generates overviews, genres, tags, sort titles, content ratings, and community ratings for selected collections.
+- Community ratings can use a one-decimal average of every eligible rated member or an optional AI suggestion.
 - Supports the OpenAI Responses API, Anthropic Messages API, and OpenAI-compatible Chat Completions endpoints.
-- Lets an administrator independently enable overviews, genres, tags, sort titles, and content ratings.
+- Lets an administrator independently enable overviews, genres, tags, sort titles, content ratings, and community ratings.
 - Supports replace, merge, and only-if-empty policies as appropriate for each field.
 - Presents current and proposed values side by side and allows edits before approval.
 - Shows the current pending-review count on the JellyCAP dashboard.

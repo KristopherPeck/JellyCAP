@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using Jellyfin.Plugin.JellyCAP.Models;
@@ -11,6 +12,11 @@ namespace Jellyfin.Plugin.JellyCAP.Services;
 internal static class MetadataFingerprint
 {
     /// <summary>
+    /// Gets the current fingerprint format version.
+    /// </summary>
+    public const int CurrentVersion = 2;
+
+    /// <summary>
     /// Creates a snapshot from a Jellyfin item.
     /// </summary>
     /// <param name="item">The source item.</param>
@@ -21,6 +27,7 @@ internal static class MetadataFingerprint
         {
             SortTitle = item.ForcedSortName ?? string.Empty,
             ContentRating = item.OfficialRating ?? string.Empty,
+            CommunityRating = item.CommunityRating,
             Overview = item.Overview ?? string.Empty,
             Genres = Normalize(item.Genres),
             Tags = Normalize(item.Tags)
@@ -33,6 +40,25 @@ internal static class MetadataFingerprint
     /// <param name="snapshot">The metadata snapshot.</param>
     /// <returns>A lowercase hexadecimal SHA-256 digest.</returns>
     public static string Compute(MetadataSnapshot snapshot)
+    {
+        var canonical = string.Join(
+            '\n',
+            snapshot.SortTitle.Trim(),
+            snapshot.ContentRating.Trim(),
+            snapshot.CommunityRating?.ToString("R", CultureInfo.InvariantCulture) ?? string.Empty,
+            snapshot.Overview.Trim(),
+            string.Join('\u001f', Normalize(snapshot.Genres)),
+            string.Join('\u001f', Normalize(snapshot.Tags)));
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Computes the fingerprint format used before community ratings were managed.
+    /// </summary>
+    /// <param name="snapshot">The metadata snapshot.</param>
+    /// <returns>A lowercase hexadecimal SHA-256 digest.</returns>
+    public static string ComputeLegacy(MetadataSnapshot snapshot)
     {
         var canonical = string.Join(
             '\n',

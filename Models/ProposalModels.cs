@@ -37,6 +37,11 @@ public sealed class GeneratedMetadata
     public string ContentRating { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the generated community rating.
+    /// </summary>
+    public float? CommunityRating { get; set; }
+
+    /// <summary>
     /// Gets or sets the generated overview.
     /// </summary>
     public string Overview { get; set; } = string.Empty;
@@ -71,6 +76,11 @@ public sealed class MetadataSnapshot
     /// Gets or sets the content rating.
     /// </summary>
     public string ContentRating { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the community rating.
+    /// </summary>
+    public float? CommunityRating { get; set; }
 
     /// <summary>
     /// Gets or sets the overview.
@@ -119,6 +129,11 @@ public sealed class MetadataProposal
     public string OriginalFingerprint { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the metadata fingerprint format version.
+    /// </summary>
+    public int FingerprintVersion { get; set; }
+
+    /// <summary>
     /// Gets or sets the proposed final metadata after merge policies are applied.
     /// </summary>
     public GeneratedMetadata Proposed { get; set; } = new();
@@ -137,6 +152,11 @@ public sealed class MetadataProposal
     /// Gets or sets the number of collection members included in the request.
     /// </summary>
     public int ContextItemCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets how the proposed community rating was produced.
+    /// </summary>
+    public string CommunityRatingSource { get; set; } = string.Empty;
 
     /// <summary>
     /// Gets or sets the proposal status.
@@ -170,6 +190,11 @@ public sealed class ApplyProposalRequest
     public bool ApplyContentRating { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the community rating should be applied.
+    /// </summary>
+    public bool ApplyCommunityRating { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether the overview should be applied.
     /// </summary>
     public bool ApplyOverview { get; set; }
@@ -193,6 +218,11 @@ public sealed class ApplyProposalRequest
     /// Gets or sets the reviewed content rating.
     /// </summary>
     public string ContentRating { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the reviewed community rating.
+    /// </summary>
+    public float? CommunityRating { get; set; }
 
     /// <summary>
     /// Gets or sets the reviewed overview.

@@ -26,6 +26,11 @@ public sealed class CollectionSummary
     public string ContentRating { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the current community rating.
+    /// </summary>
+    public float? CommunityRating { get; set; }
+
+    /// <summary>
     /// Gets or sets the current overview.
     /// </summary>
     public string Overview { get; set; } = string.Empty;
@@ -72,6 +77,11 @@ public sealed class CollectionContextItem
     public string ContentRating { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets the item community rating.
+    /// </summary>
+    public float? CommunityRating { get; set; }
+
+    /// <summary>
     /// Gets or sets the production year.
     /// </summary>
     public int? Year { get; set; }
@@ -111,6 +121,21 @@ public sealed class CollectionContext
     /// Gets or sets the collection's current content rating.
     /// </summary>
     public string CurrentContentRating { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the collection's current community rating.
+    /// </summary>
+    public float? CurrentCommunityRating { get; set; }
+
+    /// <summary>
+    /// Gets or sets the average of all eligible child community ratings.
+    /// </summary>
+    public float? AverageCommunityRating { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of eligible child ratings used in the average.
+    /// </summary>
+    public int CommunityRatingItemCount { get; set; }
 
     /// <summary>
     /// Gets or sets the collection's current overview.

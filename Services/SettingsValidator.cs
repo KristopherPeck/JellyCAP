@@ -30,12 +30,19 @@ internal static class SettingsValidator
             || !Enum.IsDefined(configuration.GenreUpdateMode)
             || !Enum.IsDefined(configuration.TagUpdateMode)
             || !Enum.IsDefined(configuration.SortTitleUpdateMode)
-            || !Enum.IsDefined(configuration.ContentRatingUpdateMode))
+            || !Enum.IsDefined(configuration.ContentRatingUpdateMode)
+            || !Enum.IsDefined(configuration.CommunityRatingUpdateMode))
         {
             throw new ArgumentException("One or more configuration modes are invalid.", nameof(source));
         }
 
-        if (string.IsNullOrWhiteSpace(configuration.Model))
+        var usesAi = configuration.GenerateOverview
+            || configuration.GenerateGenres
+            || configuration.GenerateTags
+            || configuration.GenerateSortTitle
+            || configuration.GenerateContentRating
+            || (configuration.GenerateCommunityRating && configuration.UseAiForCommunityRating);
+        if (usesAi && string.IsNullOrWhiteSpace(configuration.Model))
         {
             throw new ArgumentException("A provider model is required.", nameof(source));
         }
@@ -56,7 +63,8 @@ internal static class SettingsValidator
             throw new ArgumentException("The API key environment variable name is invalid.", nameof(source));
         }
 
-        if (configuration.ProviderType == AiProviderType.OpenAiCompatible
+        if (usesAi
+            && configuration.ProviderType == AiProviderType.OpenAiCompatible
             && string.IsNullOrWhiteSpace(configuration.Endpoint))
         {
             throw new ArgumentException("An endpoint is required for an OpenAI-compatible provider.", nameof(source));
@@ -77,7 +85,8 @@ internal static class SettingsValidator
             && !configuration.GenerateGenres
             && !configuration.GenerateTags
             && !configuration.GenerateSortTitle
-            && !configuration.GenerateContentRating)
+            && !configuration.GenerateContentRating
+            && !configuration.GenerateCommunityRating)
         {
             throw new ArgumentException("At least one metadata field must be enabled.", nameof(source));
         }

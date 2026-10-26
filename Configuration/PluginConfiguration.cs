@@ -55,6 +55,16 @@ public sealed class PluginConfiguration : BasePluginConfiguration
     public bool GenerateContentRating { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets a value indicating whether community ratings are generated.
+    /// </summary>
+    public bool GenerateCommunityRating { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether AI suggests the community rating instead of using the child-item average.
+    /// </summary>
+    public bool UseAiForCommunityRating { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether the dashboard opens pending reviews after generation.
     /// </summary>
     public bool OpenReviewAfterGeneration { get; set; }
@@ -89,6 +99,11 @@ public sealed class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the content rating replacement policy.
     /// </summary>
     public OverviewUpdateMode ContentRatingUpdateMode { get; set; } = OverviewUpdateMode.Replace;
+
+    /// <summary>
+    /// Gets or sets the community rating replacement policy.
+    /// </summary>
+    public OverviewUpdateMode CommunityRatingUpdateMode { get; set; } = OverviewUpdateMode.Replace;
 
     /// <summary>
     /// Gets or sets the desired overview style.
@@ -170,6 +185,8 @@ public sealed class PluginConfiguration : BasePluginConfiguration
             GenerateTags = GenerateTags,
             GenerateSortTitle = GenerateSortTitle,
             GenerateContentRating = GenerateContentRating,
+            GenerateCommunityRating = GenerateCommunityRating,
+            UseAiForCommunityRating = UseAiForCommunityRating,
             OpenReviewAfterGeneration = OpenReviewAfterGeneration,
             MaximumConcurrentGenerations = MaximumConcurrentGenerations,
             OverviewUpdateMode = OverviewUpdateMode,
@@ -177,6 +194,7 @@ public sealed class PluginConfiguration : BasePluginConfiguration
             TagUpdateMode = TagUpdateMode,
             SortTitleUpdateMode = SortTitleUpdateMode,
             ContentRatingUpdateMode = ContentRatingUpdateMode,
+            CommunityRatingUpdateMode = CommunityRatingUpdateMode,
             OverviewStyle = OverviewStyle,
             Language = Language,
             AllowSpoilers = AllowSpoilers,

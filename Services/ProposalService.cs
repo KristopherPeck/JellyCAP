@@ -39,20 +39,25 @@ public sealed class ProposalService
         var configuration = SettingsValidator.Validate(
             Plugin.Instance?.Configuration
             ?? throw new InvalidOperationException("JellyCAP is not initialized."));
-        var (apiKey, _) = await _secretStore.ResolveAsync(
-            configuration.ApiKeyEnvironmentVariable,
-            cancellationToken).ConfigureAwait(false);
         var context = _collectionContextService.BuildContext(collectionId, configuration.MaximumContextItems);
         if (context.Items.Length == 0)
         {
             throw new InvalidOperationException("The collection contains no eligible items. Episodes and seasons are intentionally excluded.");
         }
 
-        var generated = await _providerClient.GenerateAsync(
-            context,
-            configuration,
-            apiKey,
-            cancellationToken).ConfigureAwait(false);
+        var usesAi = UsesAi(configuration);
+        var generated = new GeneratedMetadata();
+        if (usesAi)
+        {
+            var (apiKey, _) = await _secretStore.ResolveAsync(
+                configuration.ApiKeyEnvironmentVariable,
+                cancellationToken).ConfigureAwait(false);
+            generated = await _providerClient.GenerateAsync(
+                context,
+                configuration,
+                apiKey,
+                cancellationToken).ConfigureAwait(false);
+        }
         var collection = _collectionContextService.GetCollection(collectionId);
         var original = MetadataFingerprint.Snapshot(collection);
         var proposed = ApplyPolicies(original, generated, context, configuration);
@@ -62,10 +67,16 @@ public sealed class ProposalService
             CollectionName = collection.Name ?? string.Empty,
             Original = original,
             OriginalFingerprint = MetadataFingerprint.Compute(original),
+            FingerprintVersion = MetadataFingerprint.CurrentVersion,
             Proposed = proposed,
-            Provider = configuration.ProviderType.ToString(),
-            Model = configuration.Model,
-            ContextItemCount = context.Items.Length
+            Provider = usesAi ? configuration.ProviderType.ToString() : "Jellyfin ratings",
+            Model = usesAi ? configuration.Model : "Average",
+            ContextItemCount = context.Items.Length,
+            CommunityRatingSource = configuration.GenerateCommunityRating
+                ? configuration.UseAiForCommunityRating
+                    ? "AI suggestion"
+                    : $"Average of {context.CommunityRatingItemCount} rated item(s)"
+                : string.Empty
         };
 
         await _proposalStore.SaveAsync(proposal, cancellationToken).ConfigureAwait(false);
@@ -78,15 +89,15 @@ public sealed class ProposalService
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task TestConnectionAsync(CancellationToken cancellationToken)
     {
-        var configuration = SettingsValidator.Validate(
-            Plugin.Instance?.Configuration
-            ?? throw new InvalidOperationException("JellyCAP is not initialized."));
-        configuration = configuration.Copy();
+        var configuration = (Plugin.Instance?.Configuration
+            ?? throw new InvalidOperationException("JellyCAP is not initialized.")).Copy();
         configuration.GenerateOverview = true;
         configuration.GenerateGenres = false;
         configuration.GenerateTags = false;
         configuration.GenerateSortTitle = false;
         configuration.GenerateContentRating = false;
+        configuration.GenerateCommunityRating = false;
+        configuration = SettingsValidator.Validate(configuration);
         configuration.MaximumOverviewCharacters = 100;
         var (apiKey, _) = await _secretStore.ResolveAsync(
             configuration.ApiKeyEnvironmentVariable,
@@ -164,11 +175,43 @@ public sealed class ProposalService
                 NormalizeOverview(generated.Overview, configuration.MaximumOverviewCharacters),
                 configuration.OverviewUpdateMode)
             : original.Overview;
+        var communityRating = original.CommunityRating;
+        if (configuration.GenerateCommunityRating)
+        {
+            float? suggestedRating;
+            if (configuration.UseAiForCommunityRating)
+            {
+                suggestedRating = NormalizeCommunityRating(generated.CommunityRating);
+                if (context.CommunityRatingItemCount == 0)
+                {
+                    warnings.Add("No child community ratings were available, so no community rating was suggested.");
+                    suggestedRating = null;
+                }
+                else if (generated.CommunityRating.HasValue && !suggestedRating.HasValue)
+                {
+                    warnings.Add("The provider suggested a community rating outside Jellyfin's 0–10 range; it was discarded.");
+                }
+            }
+            else
+            {
+                suggestedRating = context.AverageCommunityRating;
+                if (!suggestedRating.HasValue)
+                {
+                    warnings.Add("No child community ratings were available to average.");
+                }
+            }
+
+            communityRating = ApplyNullableScalarPolicy(
+                original.CommunityRating,
+                suggestedRating,
+                configuration.CommunityRatingUpdateMode);
+        }
 
         return new GeneratedMetadata
         {
             SortTitle = sortTitle,
             ContentRating = contentRating,
+            CommunityRating = communityRating,
             Overview = overview,
             Genres = configuration.GenerateGenres
                 ? Combine(original.Genres, generatedGenres, configuration.GenreUpdateMode)
@@ -189,6 +232,34 @@ public sealed class ProposalService
         }
 
         return generated;
+    }
+
+    private static float? ApplyNullableScalarPolicy(float? existing, float? generated, OverviewUpdateMode mode)
+    {
+        if (!generated.HasValue
+            || (mode == OverviewUpdateMode.OnlyIfEmpty && existing.HasValue))
+        {
+            return existing;
+        }
+
+        return generated;
+    }
+
+    private static float? NormalizeCommunityRating(float? rating)
+    {
+        return rating is >= 0 and <= 10 && float.IsFinite(rating.Value)
+            ? (float)Math.Round(rating.Value, 1, MidpointRounding.AwayFromZero)
+            : null;
+    }
+
+    private static bool UsesAi(PluginConfiguration configuration)
+    {
+        return configuration.GenerateOverview
+            || configuration.GenerateGenres
+            || configuration.GenerateTags
+            || configuration.GenerateSortTitle
+            || configuration.GenerateContentRating
+            || (configuration.GenerateCommunityRating && configuration.UseAiForCommunityRating);
     }
 
     private static string[] Combine(string[] existing, string[] generated, ListUpdateMode mode)

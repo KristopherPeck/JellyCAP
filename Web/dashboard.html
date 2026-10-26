@@ -35,6 +35,10 @@
         .ja-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 1.25em; }
         .ja-settings .wide { grid-column: 1 / -1; }
         .ja-checks { display: flex; flex-wrap: wrap; gap: 1.25em; margin: .75em 0 1.25em; }
+        .ja-option { display: inline-flex; align-items: center; gap: .35em; }
+        .ja-info { display: inline-flex; align-items: center; justify-content: center; width: 1.25em; height: 1.25em; box-sizing: border-box; border: 1px solid currentColor; border-radius: 50%; cursor: help; font-size: .85em; font-weight: 700; line-height: 1; opacity: .75; }
+        .ja-info:hover, .ja-info:focus { opacity: 1; outline: 2px solid #00a4dc; outline-offset: 2px; }
+        .ja-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
         .ja-review-field { margin-top: 1em; }
         .ja-review-field textarea { width: 100%; box-sizing: border-box; min-height: 7em; }
         .ja-review-field input[type="text"] { width: 100%; box-sizing: border-box; }
@@ -114,13 +118,40 @@
                         </div>
                     </div>
 
+                    <p class="fieldDescription">Options labeled “with AI” use the configured provider. The community rating average is calculated locally from eligible collection members.</p>
                     <div class="ja-checks">
-                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateOverview" type="checkbox"><span>Generate overview</span></label>
-                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateGenres" type="checkbox"><span>Generate genres</span></label>
-                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateTags" type="checkbox"><span>Generate tags</span></label>
-                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateSortTitle" type="checkbox"><span>Generate sort title</span></label>
-                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateContentRating" type="checkbox"><span>Generate content rating</span></label>
-                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="allowSpoilers" type="checkbox"><span>Allow major spoilers</span></label>
+                        <div class="ja-option">
+                            <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateOverview" type="checkbox" aria-describedby="helpGenerateOverview"><span>Generate overview with AI</span></label>
+                            <span id="helpGenerateOverview" class="ja-info" tabindex="0" title="AI writes a collection overview from eligible item metadata, using the selected style, language, spoiler, and length settings."><span aria-hidden="true">i</span><span class="ja-sr-only">AI writes a collection overview from eligible item metadata, using the selected style, language, spoiler, and length settings.</span></span>
+                        </div>
+                        <div class="ja-option">
+                            <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateGenres" type="checkbox" aria-describedby="helpGenerateGenres"><span>Generate genres with AI</span></label>
+                            <span id="helpGenerateGenres" class="ja-info" tabindex="0" title="AI selects genres from the configured genre vocabulary, or from genres already present on eligible collection members."><span aria-hidden="true">i</span><span class="ja-sr-only">AI selects genres from the configured genre vocabulary, or from genres already present on eligible collection members.</span></span>
+                        </div>
+                        <div class="ja-option">
+                            <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateTags" type="checkbox" aria-describedby="helpGenerateTags"><span>Generate tags with AI</span></label>
+                            <span id="helpGenerateTags" class="ja-info" tabindex="0" title="AI suggests discovery tags describing shared themes, settings, eras, styles, or audiences."><span aria-hidden="true">i</span><span class="ja-sr-only">AI suggests discovery tags describing shared themes, settings, eras, styles, or audiences.</span></span>
+                        </div>
+                        <div class="ja-option">
+                            <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateSortTitle" type="checkbox" aria-describedby="helpGenerateSortTitle"><span>Generate sort title with AI</span></label>
+                            <span id="helpGenerateSortTitle" class="ja-info" tabindex="0" title="AI proposes a concise collection sort title while preserving useful franchise ordering words or numbers."><span aria-hidden="true">i</span><span class="ja-sr-only">AI proposes a concise collection sort title while preserving useful franchise ordering words or numbers.</span></span>
+                        </div>
+                        <div class="ja-option">
+                            <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateContentRating" type="checkbox" aria-describedby="helpGenerateContentRating"><span>Choose content rating with AI</span></label>
+                            <span id="helpGenerateContentRating" class="ja-info" tabindex="0" title="AI chooses one exact content rating already present on eligible collection members. It cannot invent or translate a rating."><span aria-hidden="true">i</span><span class="ja-sr-only">AI chooses one exact content rating already present on eligible collection members. It cannot invent or translate a rating.</span></span>
+                        </div>
+                        <div class="ja-option">
+                            <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateCommunityRating" type="checkbox" aria-describedby="helpGenerateCommunityRating"><span>Calculate community rating average</span></label>
+                            <span id="helpGenerateCommunityRating" class="ja-info" tabindex="0" title="JellyCAP locally averages every eligible member with a Jellyfin community rating and rounds the result to one decimal. Unrated items are ignored."><span aria-hidden="true">i</span><span class="ja-sr-only">JellyCAP locally averages every eligible member with a Jellyfin community rating and rounds the result to one decimal. Unrated items are ignored.</span></span>
+                        </div>
+                        <div class="ja-option">
+                            <label class="emby-checkbox-label"><input is="emby-checkbox" id="useAiForCommunityRating" type="checkbox" aria-describedby="helpUseAiCommunityRating"><span>Use AI instead of the average</span></label>
+                            <span id="helpUseAiCommunityRating" class="ja-info" tabindex="0" title="When enabled, AI suggests a 0–10 community rating from the supplied child ratings instead of using the locally calculated average."><span aria-hidden="true">i</span><span class="ja-sr-only">When enabled, AI suggests a 0–10 community rating from the supplied child ratings instead of using the locally calculated average.</span></span>
+                        </div>
+                        <div class="ja-option">
+                            <label class="emby-checkbox-label"><input is="emby-checkbox" id="allowSpoilers" type="checkbox" aria-describedby="helpAllowSpoilers"><span>Allow major spoilers</span></label>
+                            <span id="helpAllowSpoilers" class="ja-info" tabindex="0" title="Allows the AI-generated overview to mention endings, deaths, and late-story revelations when useful."><span aria-hidden="true">i</span><span class="ja-sr-only">Allows the AI-generated overview to mention endings, deaths, and late-story revelations when useful.</span></span>
+                        </div>
                     </div>
 
                     <div class="ja-settings">
@@ -144,6 +175,11 @@
                             <label class="selectLabel" for="contentRatingUpdateMode">Content rating policy</label>
                             <select is="emby-select" id="contentRatingUpdateMode"><option value="0">Replace</option><option value="1">Only if empty</option></select>
                             <div class="fieldDescription">Suggestions are limited to exact ratings found on eligible collection members.</div>
+                        </div>
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="communityRatingUpdateMode">Community rating policy</label>
+                            <select is="emby-select" id="communityRatingUpdateMode"><option value="0">Replace</option><option value="1">Only if empty</option></select>
+                            <div class="fieldDescription">Uses the one-decimal average of every eligible rated member unless the AI option is enabled. Ratings without a value are ignored.</div>
                         </div>
                         <div class="selectContainer">
                             <label class="selectLabel" for="overviewStyle">Overview style</label>
@@ -322,7 +358,7 @@
 
             function addMetadata(definition, label, content) {
                 var term = element('dt', '', label);
-                var description = element('dd', '', content || '—');
+                var description = element('dd', '', content === null || content === undefined || content === '' ? '—' : content);
                 definition.appendChild(term);
                 definition.appendChild(description);
             }
@@ -381,6 +417,7 @@
                         var metadata = element('dl', 'ja-meta');
                         addMetadata(metadata, 'Sort title', collection.sortTitle);
                         addMetadata(metadata, 'Content rating', collection.contentRating);
+                        addMetadata(metadata, 'Community rating', collection.communityRating);
                         addMetadata(metadata, 'Overview', collection.overview);
                         addMetadata(metadata, 'Genres', (collection.genres || []).join(', '));
                         addMetadata(metadata, 'Tags', (collection.tags || []).join(', '));
@@ -527,7 +564,7 @@
                     });
             }
 
-            function reviewField(card, proposal, key, label, multiline) {
+            function reviewField(card, proposal, key, label, multiline, numeric) {
                 var wrapper = element('div', 'ja-review-field');
                 var checkboxLabel = element('label', 'emby-checkbox-label');
                 var checkbox = document.createElement('input');
@@ -541,9 +578,16 @@
                 checkboxLabel.appendChild(element('span', '', ' Apply ' + label.toLowerCase()));
                 wrapper.appendChild(checkboxLabel);
                 var control = document.createElement(multiline ? 'textarea' : 'input');
-                if (!multiline) { control.type = 'text'; }
+                if (!multiline) { control.type = numeric ? 'number' : 'text'; }
+                if (numeric) {
+                    control.min = '0';
+                    control.max = '10';
+                    control.step = '0.1';
+                }
                 control.dataset.reviewField = key;
-                control.value = Array.isArray(proposed) ? proposed.join(', ') : (proposed || '');
+                control.value = Array.isArray(proposed)
+                    ? proposed.join(', ')
+                    : (proposed === null || proposed === undefined ? '' : proposed);
                 wrapper.appendChild(control);
                 card.appendChild(wrapper);
             }
@@ -580,9 +624,13 @@
                         card.style.marginBottom = '1em';
                         card.appendChild(element('h3', '', proposal.collectionName));
                         card.appendChild(element('p', 'ja-muted', proposal.provider + ' / ' + proposal.model + ' · ' + proposal.contextItemCount + ' context item(s)'));
+                        if (proposal.communityRatingSource) {
+                            card.appendChild(element('p', 'ja-muted', 'Community rating source: ' + proposal.communityRatingSource));
+                        }
                         var current = element('dl', 'ja-meta');
                         addMetadata(current, 'Current sort title', proposal.original.sortTitle);
                         addMetadata(current, 'Current content rating', proposal.original.contentRating);
+                        addMetadata(current, 'Current community rating', proposal.original.communityRating);
                         addMetadata(current, 'Current overview', proposal.original.overview);
                         addMetadata(current, 'Current genres', (proposal.original.genres || []).join(', '));
                         addMetadata(current, 'Current tags', (proposal.original.tags || []).join(', '));
@@ -592,6 +640,7 @@
                         }
                         reviewField(card, proposal, 'sortTitle', 'Sort title', false);
                         reviewField(card, proposal, 'contentRating', 'Content rating', false);
+                        reviewField(card, proposal, 'communityRating', 'Community rating', false, true);
                         reviewField(card, proposal, 'overview', 'Overview', true);
                         reviewField(card, proposal, 'genres', 'Genres', false);
                         reviewField(card, proposal, 'tags', 'Tags', false);
@@ -621,11 +670,13 @@
                 var payload = {
                     applySortTitle: getCheck('sortTitle'),
                     applyContentRating: getCheck('contentRating'),
+                    applyCommunityRating: getCheck('communityRating'),
                     applyOverview: getCheck('overview'),
                     applyGenres: getCheck('genres'),
                     applyTags: getCheck('tags'),
                     sortTitle: getValue('sortTitle'),
                     contentRating: getValue('contentRating'),
+                    communityRating: nullableNumberValue(getValue('communityRating')),
                     overview: getValue('overview'),
                     genres: listValue(getValue('genres')),
                     tags: listValue(getValue('tags')),
@@ -660,6 +711,24 @@
 
             function setValue(id, newValue) { byId(id).value = newValue === null || newValue === undefined ? '' : String(newValue); }
             function setChecked(id, newValue) { byId(id).checked = Boolean(newValue); }
+            function nullableNumberValue(rawValue) {
+                var normalized = String(rawValue || '').trim();
+                return normalized === '' ? null : Number(normalized);
+            }
+            function syncCommunityRatingOptions() {
+                var enabled = checked('generateCommunityRating');
+                byId('useAiForCommunityRating').disabled = !enabled;
+                syncProviderRequirements();
+            }
+            function syncProviderRequirements() {
+                var usesAi = checked('generateOverview')
+                    || checked('generateGenres')
+                    || checked('generateTags')
+                    || checked('generateSortTitle')
+                    || checked('generateContentRating')
+                    || (checked('generateCommunityRating') && checked('useAiForCommunityRating'));
+                byId('model').required = usesAi;
+            }
             function syncOverviewStyleInput() {
                 var custom = value('overviewStyle') === '__custom__';
                 byId('overviewStyleCustomContainer').hidden = !custom;
@@ -697,6 +766,9 @@
                 setChecked('generateTags', config.generateTags);
                 setChecked('generateSortTitle', config.generateSortTitle);
                 setChecked('generateContentRating', config.generateContentRating);
+                setChecked('generateCommunityRating', config.generateCommunityRating);
+                setChecked('useAiForCommunityRating', config.useAiForCommunityRating);
+                syncCommunityRatingOptions();
                 openReviewAfterGeneration = Boolean(config.openReviewAfterGeneration);
                 setChecked('openReviewAfterGeneration', openReviewAfterGeneration);
                 maximumConcurrentGenerations = Math.max(1, Math.min(5, Number(config.maximumConcurrentGenerations) || 2));
@@ -707,6 +779,7 @@
                 setValue('tagUpdateMode', enumValue(config.tagUpdateMode, ['merge', 'replace', 'onlyifempty']));
                 setValue('sortTitleUpdateMode', enumValue(config.sortTitleUpdateMode, ['replace', 'onlyifempty']));
                 setValue('contentRatingUpdateMode', enumValue(config.contentRatingUpdateMode, ['replace', 'onlyifempty']));
+                setValue('communityRatingUpdateMode', enumValue(config.communityRatingUpdateMode, ['replace', 'onlyifempty']));
                 setOverviewStyle(config.overviewStyle);
                 setValue('language', config.language);
                 setChecked('allowSpoilers', config.allowSpoilers);
@@ -745,6 +818,8 @@
                         generateTags: checked('generateTags'),
                         generateSortTitle: checked('generateSortTitle'),
                         generateContentRating: checked('generateContentRating'),
+                        generateCommunityRating: checked('generateCommunityRating'),
+                        useAiForCommunityRating: checked('useAiForCommunityRating'),
                         openReviewAfterGeneration: checked('openReviewAfterGeneration'),
                         maximumConcurrentGenerations: numberValue('maximumConcurrentGenerations'),
                         overviewUpdateMode: numberValue('overviewUpdateMode'),
@@ -752,6 +827,7 @@
                         tagUpdateMode: numberValue('tagUpdateMode'),
                         sortTitleUpdateMode: numberValue('sortTitleUpdateMode'),
                         contentRatingUpdateMode: numberValue('contentRatingUpdateMode'),
+                        communityRatingUpdateMode: numberValue('communityRatingUpdateMode'),
                         overviewStyle: getOverviewStyle(),
                         language: value('language'),
                         allowSpoilers: checked('allowSpoilers'),
@@ -822,6 +898,11 @@
                 byId('settingsForm').addEventListener('submit', saveSettings);
                 byId('testConnection').addEventListener('click', function () { testConnection(this); });
                 byId('overviewStyle').addEventListener('change', syncOverviewStyleInput);
+                byId('generateCommunityRating').addEventListener('change', syncCommunityRatingOptions);
+                byId('useAiForCommunityRating').addEventListener('change', syncProviderRequirements);
+                ['generateOverview', 'generateGenres', 'generateTags', 'generateSortTitle', 'generateContentRating'].forEach(function (id) {
+                    byId(id).addEventListener('change', syncProviderRequirements);
+                });
             }
 
             page.addEventListener('viewshow', function () {

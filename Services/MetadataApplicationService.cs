@@ -39,7 +39,8 @@ public sealed class MetadataApplicationService
             && !request.ApplyGenres
             && !request.ApplyTags
             && !request.ApplySortTitle
-            && !request.ApplyContentRating)
+            && !request.ApplyContentRating
+            && !request.ApplyCommunityRating)
         {
             throw new ArgumentException("Select at least one metadata field to apply.", nameof(request));
         }
@@ -47,7 +48,9 @@ public sealed class MetadataApplicationService
         var proposal = await GetPendingAsync(proposalId, cancellationToken).ConfigureAwait(false);
         var collection = _collectionContextService.GetCollection(proposal.CollectionId);
         var current = MetadataFingerprint.Snapshot(collection);
-        var currentFingerprint = MetadataFingerprint.Compute(current);
+        var currentFingerprint = proposal.FingerprintVersion >= MetadataFingerprint.CurrentVersion
+            ? MetadataFingerprint.Compute(current)
+            : MetadataFingerprint.ComputeLegacy(current);
         if (!request.Force
             && !string.Equals(currentFingerprint, proposal.OriginalFingerprint, StringComparison.Ordinal))
         {
@@ -68,6 +71,21 @@ public sealed class MetadataApplicationService
         {
             var contentRating = NormalizeScalar(request.ContentRating, 100);
             collection.OfficialRating = string.IsNullOrWhiteSpace(contentRating) ? null : contentRating;
+        }
+
+        if (request.ApplyCommunityRating)
+        {
+            if (request.CommunityRating is < 0 or > 10
+                || (request.CommunityRating.HasValue && !float.IsFinite(request.CommunityRating.Value)))
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(request),
+                    "Community rating must be between 0 and 10.");
+            }
+
+            collection.CommunityRating = request.CommunityRating.HasValue
+                ? (float)Math.Round(request.CommunityRating.Value, 1, MidpointRounding.AwayFromZero)
+                : null;
         }
 
         if (request.ApplyOverview)
@@ -93,6 +111,7 @@ public sealed class MetadataApplicationService
         {
             SortTitle = applied.SortTitle,
             ContentRating = applied.ContentRating,
+            CommunityRating = applied.CommunityRating,
             Overview = applied.Overview,
             Genres = applied.Genres,
             Tags = applied.Tags,
