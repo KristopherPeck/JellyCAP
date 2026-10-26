@@ -13,9 +13,12 @@ The initial release targets Jellyfin 12.3 and .NET 10.
 - Supports replace, merge, and only-if-empty policies as appropriate for each field.
 - Presents current and proposed values side by side and allows edits before approval.
 - Shows the current pending-review count on the JellyAnnotator dashboard.
+- Paginates collections 50 at a time and pending reviews 25 at a time.
 - Stays on the collection list after generation by default, with an option to open Pending reviews automatically.
+- Prunes approved and rejected proposal history using configurable age and count limits while preserving every pending proposal.
+- Writes handled provider, storage, configuration, and review failures through Jellyfin's logging system.
 - Detects metadata changed after generation and asks before overwriting it.
-- Stores rejected and applied proposal history without sending provider credentials to the browser.
+- Retains rejected and applied proposal history according to the configured policy without sending provider credentials to the browser.
 
 ## TV collection behavior
 
@@ -47,6 +50,8 @@ Stored keys are plaintext server-side secrets, like many Jellyfin plugin credent
 
 The pending-review badge updates after generation, approval, rejection, and review refresh. Enable **Open Pending reviews after generating a proposal** in Settings if you prefer the dashboard to switch to the new proposal automatically.
 
+Completed proposal retention applies to approved and rejected proposals as one combined history. The defaults retain completed proposals for 7 days, capped at the newest 100 records. Setting either completed-history limit to 0 removes completed proposals immediately. Pending proposals are never removed by retention.
+
 Jellyfin's supported plugin-page registration does not expose a dynamic badge or admin-home widget hook, so the live count is displayed inside the JellyAnnotator dashboard. Adding it to Jellyfin's own navigation or admin home would require an unsupported web-client modification.
 
 When a proposal is generated, JellyAnnotator fingerprints the collection's current sort title, content rating, overview, genres, and tags. If those fields change before approval, the normal apply request stops with a conflict instead of silently overwriting the newer metadata. The dashboard then offers an explicit force option.
@@ -67,7 +72,7 @@ Copy the published plugin assembly and its required plugin-local files into a `J
 ## Current scope
 
 - Generation is intentionally manual and collection-by-collection.
-- Proposals are persisted as JSON in the plugin data directory.
+- Proposals are persisted as JSON in the plugin data directory; collection and pending-review API responses are paginated.
 - Only administrators can access the plugin API and dashboard.
 - Provider calls are made directly by the Jellyfin server.
 - The initial version does not schedule bulk jobs, generate images, or annotate ordinary library items.

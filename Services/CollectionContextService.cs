@@ -29,8 +29,10 @@ public sealed class CollectionContextService
     /// Lists collections by name.
     /// </summary>
     /// <param name="search">Optional case-insensitive name filter.</param>
-    /// <returns>Matching collections.</returns>
-    public IReadOnlyList<CollectionSummary> ListCollections(string? search)
+    /// <param name="startIndex">Zero-based index of the first result.</param>
+    /// <param name="limit">Maximum number of results to return.</param>
+    /// <returns>A bounded page of matching collections.</returns>
+    public PagedResult<CollectionSummary> ListCollections(string? search, int startIndex, int limit)
     {
         var query = new InternalItemsQuery
         {
@@ -40,11 +42,18 @@ public sealed class CollectionContextService
             DtoOptions = DtoOptions.StoredColumnsOnly
         };
 
-        return _libraryManager.GetItemList(query)
+        var matching = _libraryManager.GetItemList(query)
             .OfType<BoxSet>()
             .Where(boxSet => string.IsNullOrWhiteSpace(search)
                 || (boxSet.Name ?? string.Empty).Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
             .OrderBy(boxSet => boxSet.SortName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var boundedStartIndex = Math.Max(0, startIndex);
+        var boundedLimit = Math.Clamp(limit, 1, 100);
+
+        var items = matching
+            .Skip(boundedStartIndex)
+            .Take(boundedLimit)
             .Select(boxSet => new CollectionSummary
             {
                 Id = boxSet.Id,
@@ -57,6 +66,14 @@ public sealed class CollectionContextService
                 LinkedItemCount = boxSet.LinkedChildren.Length
             })
             .ToArray();
+
+        return new PagedResult<CollectionSummary>
+        {
+            Items = items,
+            TotalCount = matching.Length,
+            StartIndex = boundedStartIndex,
+            PageSize = boundedLimit
+        };
     }
 
     /// <summary>

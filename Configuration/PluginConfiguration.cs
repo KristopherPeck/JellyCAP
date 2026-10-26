@@ -125,6 +125,18 @@ public sealed class PluginConfiguration : BasePluginConfiguration
     public int RequestTimeoutSeconds { get; set; } = 90;
 
     /// <summary>
+    /// Gets or sets how many days applied and rejected proposals are retained.
+    /// Zero removes completed proposals immediately.
+    /// </summary>
+    public int CompletedProposalRetentionDays { get; set; } = 7;
+
+    /// <summary>
+    /// Gets or sets the maximum combined number of applied and rejected proposals retained.
+    /// Zero keeps no completed proposal history.
+    /// </summary>
+    public int MaximumCompletedProposalHistory { get; set; } = 100;
+
+    /// <summary>
     /// Gets or sets an optional newline- or comma-delimited genre allow-list.
     /// When empty, genres found on the collection's children are used as the vocabulary.
     /// </summary>
@@ -166,6 +178,8 @@ public sealed class PluginConfiguration : BasePluginConfiguration
             MaximumTags = MaximumTags,
             MaximumContextItems = MaximumContextItems,
             RequestTimeoutSeconds = RequestTimeoutSeconds,
+            CompletedProposalRetentionDays = CompletedProposalRetentionDays,
+            MaximumCompletedProposalHistory = MaximumCompletedProposalHistory,
             GenreAllowList = GenreAllowList,
             CustomInstructions = CustomInstructions
         };

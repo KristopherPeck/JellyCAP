@@ -87,6 +87,8 @@ internal static class SettingsValidator
         configuration.MaximumTags = Math.Clamp(configuration.MaximumTags, 1, 100);
         configuration.MaximumContextItems = Math.Clamp(configuration.MaximumContextItems, 1, 1000);
         configuration.RequestTimeoutSeconds = Math.Clamp(configuration.RequestTimeoutSeconds, 10, 600);
+        configuration.CompletedProposalRetentionDays = Math.Clamp(configuration.CompletedProposalRetentionDays, 0, 3650);
+        configuration.MaximumCompletedProposalHistory = Math.Clamp(configuration.MaximumCompletedProposalHistory, 0, 10000);
 
         if (configuration.CustomInstructions.Length > 4000)
         {

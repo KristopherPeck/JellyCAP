@@ -18,6 +18,8 @@
         .ja-panel[hidden] { display: none; }
         .ja-toolbar { display: flex; flex-wrap: wrap; gap: .75em; align-items: flex-end; margin-bottom: 1em; }
         .ja-toolbar .inputContainer { flex: 1 1 18em; margin-bottom: 0; }
+        .ja-pager { display: flex; align-items: center; justify-content: center; gap: .75em; margin: 1.25em 0; }
+        .ja-page-info { min-width: 12em; text-align: center; }
         .ja-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); gap: 1em; }
         .ja-card { border: 1px solid rgba(255,255,255,.16); border-radius: .4em; padding: 1em; background: rgba(255,255,255,.04); }
         .ja-card h3 { margin-top: 0; }
@@ -61,6 +63,11 @@
                     <button is="emby-button" type="button" class="raised button-submit" id="refreshCollections">Refresh</button>
                 </div>
                 <div id="collectionsList" class="ja-grid"></div>
+                <div class="ja-pager" aria-label="Collection pages">
+                    <button is="emby-button" type="button" class="raised" id="previousCollections">Previous</button>
+                    <span id="collectionsPageInfo" class="ja-page-info ja-muted"></span>
+                    <button is="emby-button" type="button" class="raised" id="nextCollections">Next</button>
+                </div>
             </section>
 
             <section id="reviewsPanel" class="ja-panel" hidden>
@@ -68,6 +75,11 @@
                     <button is="emby-button" type="button" class="raised button-submit" id="refreshReviews">Refresh reviews</button>
                 </div>
                 <div id="reviewsList"></div>
+                <div class="ja-pager" aria-label="Pending review pages">
+                    <button is="emby-button" type="button" class="raised" id="previousReviews">Previous</button>
+                    <span id="reviewsPageInfo" class="ja-page-info ja-muted"></span>
+                    <button is="emby-button" type="button" class="raised" id="nextReviews">Next</button>
+                </div>
             </section>
 
             <section id="settingsPanel" class="ja-panel" hidden>
@@ -174,6 +186,16 @@
                             <label class="inputLabel inputLabelUnfocused" for="requestTimeoutSeconds">Request timeout (seconds)</label>
                             <input is="emby-input" id="requestTimeoutSeconds" type="number" min="10" max="600">
                         </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="completedProposalRetentionDays">Completed proposal retention (days)</label>
+                            <input is="emby-input" id="completedProposalRetentionDays" type="number" min="0" max="3650">
+                            <div class="fieldDescription">Applies to both approved and rejected proposals. Use 0 to remove them immediately.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="maximumCompletedProposalHistory">Maximum completed proposal history</label>
+                            <input is="emby-input" id="maximumCompletedProposalHistory" type="number" min="0" max="10000">
+                            <div class="fieldDescription">Combined approved and rejected history. Use 0 to keep none. Pending proposals are never removed.</div>
+                        </div>
                         <div class="inputContainer wide">
                             <label class="inputLabel inputLabelUnfocused" for="genreAllowList">Genre vocabulary</label>
                             <textarea is="emby-input" id="genreAllowList" rows="4" placeholder="Comma or newline separated; blank uses genres found on child items"></textarea>
@@ -204,6 +226,10 @@
             var page = document.getElementById('JellyAnnotatorPage');
             var loaded = false;
             var openReviewAfterGeneration = false;
+            var collectionStartIndex = 0;
+            var collectionPageSize = 50;
+            var reviewStartIndex = 0;
+            var reviewPageSize = 25;
 
             function api(path, options) {
                 var request = options || {};
@@ -289,6 +315,14 @@
                 definition.appendChild(description);
             }
 
+            function updatePager(infoId, previousId, nextId, startIndex, pageSize, totalCount, itemLabel) {
+                var first = totalCount > 0 ? startIndex + 1 : 0;
+                var last = Math.min(startIndex + pageSize, totalCount);
+                byId(infoId).textContent = first + '-' + last + ' of ' + totalCount + ' ' + itemLabel;
+                byId(previousId).disabled = startIndex <= 0;
+                byId(nextId).disabled = startIndex + pageSize >= totalCount;
+            }
+
             function showPanel(panelId) {
                 page.querySelectorAll('.ja-panel').forEach(function (panel) { panel.hidden = panel.id !== panelId; });
                 page.querySelectorAll('.ja-tab').forEach(function (tab) {
@@ -299,14 +333,31 @@
                 if (panelId === 'settingsPanel') { loadSettings(); }
             }
 
-            function loadCollections() {
+            function loadCollections(resetPage) {
+                if (resetPage) { collectionStartIndex = 0; }
                 var search = value('collectionSearch').trim();
-                var path = 'Collections' + (search ? '?search=' + encodeURIComponent(search) : '');
+                var path = 'Collections?startIndex=' + collectionStartIndex + '&limit=' + collectionPageSize
+                    + (search ? '&search=' + encodeURIComponent(search) : '');
                 var list = byId('collectionsList');
                 list.textContent = '';
                 list.appendChild(element('p', 'ja-muted', 'Loading collections…'));
-                return api(path).then(function (collections) {
+                return api(path).then(function (result) {
+                    var collections = result.items || [];
+                    if (!collections.length && collectionStartIndex > 0 && collectionStartIndex >= result.totalCount) {
+                        collectionStartIndex = Math.max(0, collectionStartIndex - collectionPageSize);
+                        return loadCollections(false);
+                    }
+
+                    collectionStartIndex = result.startIndex;
                     list.textContent = '';
+                    updatePager(
+                        'collectionsPageInfo',
+                        'previousCollections',
+                        'nextCollections',
+                        result.startIndex,
+                        result.pageSize,
+                        result.totalCount,
+                        result.totalCount === 1 ? 'collection' : 'collections');
                     if (!collections.length) {
                         list.appendChild(element('p', 'ja-muted', 'No matching collections were found.'));
                         return;
@@ -354,12 +405,7 @@
                     .finally(function () { setBusy(button, false); });
             }
 
-            function isPending(status) {
-                return status === 0 || String(status).toLowerCase() === 'pending';
-            }
-
-            function updatePendingReviewCount(proposals) {
-                var count = proposals.filter(function (proposal) { return isPending(proposal.status); }).length;
+            function updatePendingReviewCount(count) {
                 var badge = byId('pendingReviewCount');
                 badge.textContent = String(count);
                 badge.setAttribute('aria-label', count + (count === 1 ? ' pending review' : ' pending reviews'));
@@ -367,8 +413,8 @@
             }
 
             function loadPendingReviewCount() {
-                return api('Proposals?status=Pending')
-                    .then(updatePendingReviewCount)
+                return api('Proposals/Count?status=Pending')
+                    .then(function (result) { return updatePendingReviewCount(result.count); })
                     .catch(function () {
                         var badge = byId('pendingReviewCount');
                         badge.textContent = '?';
@@ -402,10 +448,25 @@
                 var list = byId('reviewsList');
                 list.textContent = '';
                 list.appendChild(element('p', 'ja-muted', 'Loading proposals…'));
-                return api('Proposals').then(function (proposals) {
+                var path = 'Proposals?status=Pending&startIndex=' + reviewStartIndex + '&limit=' + reviewPageSize;
+                return api(path).then(function (result) {
+                    var pending = result.items || [];
+                    if (!pending.length && reviewStartIndex > 0 && reviewStartIndex >= result.totalCount) {
+                        reviewStartIndex = Math.max(0, reviewStartIndex - reviewPageSize);
+                        return loadReviews();
+                    }
+
+                    reviewStartIndex = result.startIndex;
                     list.textContent = '';
-                    updatePendingReviewCount(proposals);
-                    var pending = proposals.filter(function (proposal) { return isPending(proposal.status); });
+                    updatePendingReviewCount(result.totalCount);
+                    updatePager(
+                        'reviewsPageInfo',
+                        'previousReviews',
+                        'nextReviews',
+                        result.startIndex,
+                        result.pageSize,
+                        result.totalCount,
+                        result.totalCount === 1 ? 'review' : 'reviews');
                     if (!pending.length) {
                         list.appendChild(element('p', 'ja-muted', 'There are no pending proposals.'));
                         return;
@@ -547,6 +608,8 @@
                 setValue('maximumTags', config.maximumTags);
                 setValue('maximumContextItems', config.maximumContextItems);
                 setValue('requestTimeoutSeconds', config.requestTimeoutSeconds);
+                setValue('completedProposalRetentionDays', config.completedProposalRetentionDays);
+                setValue('maximumCompletedProposalHistory', config.maximumCompletedProposalHistory);
                 setValue('genreAllowList', config.genreAllowList);
                 setValue('customInstructions', config.customInstructions);
                 byId('apiKey').value = '';
@@ -589,6 +652,8 @@
                         maximumTags: numberValue('maximumTags'),
                         maximumContextItems: numberValue('maximumContextItems'),
                         requestTimeoutSeconds: numberValue('requestTimeoutSeconds'),
+                        completedProposalRetentionDays: numberValue('completedProposalRetentionDays'),
+                        maximumCompletedProposalHistory: numberValue('maximumCompletedProposalHistory'),
                         genreAllowList: value('genreAllowList'),
                         customInstructions: value('customInstructions')
                     },
@@ -625,11 +690,27 @@
                 page.querySelectorAll('.ja-tab').forEach(function (tab) {
                     tab.addEventListener('click', function () { showPanel(tab.dataset.panel); });
                 });
-                byId('refreshCollections').addEventListener('click', loadCollections);
+                byId('refreshCollections').addEventListener('click', function () { loadCollections(false); });
                 byId('collectionSearch').addEventListener('keydown', function (event) {
-                    if (event.key === 'Enter') { event.preventDefault(); loadCollections(); }
+                    if (event.key === 'Enter') { event.preventDefault(); loadCollections(true); }
                 });
-                byId('refreshReviews').addEventListener('click', loadReviews);
+                byId('previousCollections').addEventListener('click', function () {
+                    collectionStartIndex = Math.max(0, collectionStartIndex - collectionPageSize);
+                    loadCollections(false);
+                });
+                byId('nextCollections').addEventListener('click', function () {
+                    collectionStartIndex += collectionPageSize;
+                    loadCollections(false);
+                });
+                byId('refreshReviews').addEventListener('click', function () { loadReviews(); });
+                byId('previousReviews').addEventListener('click', function () {
+                    reviewStartIndex = Math.max(0, reviewStartIndex - reviewPageSize);
+                    loadReviews();
+                });
+                byId('nextReviews').addEventListener('click', function () {
+                    reviewStartIndex += reviewPageSize;
+                    loadReviews();
+                });
                 byId('settingsForm').addEventListener('submit', saveSettings);
                 byId('testConnection').addEventListener('click', function () { testConnection(this); });
                 byId('overviewStyle').addEventListener('change', syncOverviewStyleInput);
