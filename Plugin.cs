@@ -44,7 +44,7 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override string ConfigurationFileName => LegacyAssemblyName + ".xml";
 
     /// <inheritdoc />
-    public override string Description => "Jellyfin Collection Annotation Plugin: generate and review collection overviews, genres, tags, sort titles, and content ratings with an AI provider.";
+    public override string Description => "Jellyfin Collection Annotation Plugin: generate and review collection overviews, genres, tags, sort titles, content ratings, and community ratings.";
 
     /// <inheritdoc />
     public override Guid Id => PluginId;
