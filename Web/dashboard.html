@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>JellyAnnotator</title>
+</head>
+<body>
+<div id="JellyAnnotatorPage"
+     data-role="page"
+     class="page type-interior pluginConfigurationPage"
+     data-require="emby-button,emby-checkbox,emby-input,emby-select">
+    <style>
+        .ja-page { max-width: 1100px; }
+        .ja-tabs { display: flex; flex-wrap: wrap; gap: .5em; margin: 1.25em 0; }
+        .ja-tab[aria-selected="true"] { background: #00a4dc; color: #fff; }
+        .ja-count { display: inline-flex; align-items: center; justify-content: center; min-width: 1.45em; height: 1.45em; box-sizing: border-box; margin-left: .35em; padding: 0 .35em; border-radius: 1em; background: rgba(255,255,255,.2); font-size: .9em; font-weight: 600; }
+        .ja-panel[hidden] { display: none; }
+        .ja-toolbar { display: flex; flex-wrap: wrap; gap: .75em; align-items: flex-end; margin-bottom: 1em; }
+        .ja-toolbar .inputContainer { flex: 1 1 18em; margin-bottom: 0; }
+        .ja-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); gap: 1em; }
+        .ja-card { border: 1px solid rgba(255,255,255,.16); border-radius: .4em; padding: 1em; background: rgba(255,255,255,.04); }
+        .ja-card h3 { margin-top: 0; }
+        .ja-muted { opacity: .72; }
+        .ja-meta { font-size: .92em; overflow-wrap: anywhere; }
+        .ja-meta dt { font-weight: 600; margin-top: .65em; }
+        .ja-meta dd { margin-left: 0; white-space: pre-wrap; }
+        .ja-actions { display: flex; flex-wrap: wrap; gap: .6em; margin-top: 1em; }
+        .ja-actions .ja-message { align-self: center; margin: 0 0 0 .35em; }
+        .ja-message { min-height: 1.5em; margin: .75em 0; }
+        .ja-message.error { color: #ff8a80; }
+        .ja-message.success { color: #69f0ae; }
+        .ja-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 1.25em; }
+        .ja-settings .wide { grid-column: 1 / -1; }
+        .ja-checks { display: flex; flex-wrap: wrap; gap: 1.25em; margin: .75em 0 1.25em; }
+        .ja-review-field { margin-top: 1em; }
+        .ja-review-field textarea { width: 100%; box-sizing: border-box; min-height: 7em; }
+        .ja-review-field input[type="text"] { width: 100%; box-sizing: border-box; }
+        .ja-warning { border-left: .25em solid #fbc02d; padding-left: .75em; }
+    </style>
+
+    <div data-role="content">
+        <div class="content-primary ja-page">
+            <h1>JellyAnnotator</h1>
+            <p class="ja-muted">Generate reviewable collection metadata from the collection's own contents. TV context stays at show level; seasons and episodes are excluded.</p>
+
+            <div class="ja-tabs" role="tablist" aria-label="JellyAnnotator sections">
+                <button is="emby-button" type="button" class="raised ja-tab" data-panel="collectionsPanel" aria-selected="true">Collections</button>
+                <button is="emby-button" type="button" class="raised ja-tab" data-panel="reviewsPanel" aria-selected="false">Pending reviews <span id="pendingReviewCount" class="ja-count" aria-label="0 pending reviews">0</span></button>
+                <button is="emby-button" type="button" class="raised ja-tab" data-panel="settingsPanel" aria-selected="false">Settings</button>
+            </div>
+
+            <div id="globalMessage" class="ja-message" role="status" aria-live="polite"></div>
+
+            <section id="collectionsPanel" class="ja-panel">
+                <div class="ja-toolbar">
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="collectionSearch">Search collections</label>
+                        <input is="emby-input" id="collectionSearch" type="search" autocomplete="off">
+                    </div>
+                    <button is="emby-button" type="button" class="raised button-submit" id="refreshCollections">Refresh</button>
+                </div>
+                <div id="collectionsList" class="ja-grid"></div>
+            </section>
+
+            <section id="reviewsPanel" class="ja-panel" hidden>
+                <div class="ja-toolbar">
+                    <button is="emby-button" type="button" class="raised button-submit" id="refreshReviews">Refresh reviews</button>
+                </div>
+                <div id="reviewsList"></div>
+            </section>
+
+            <section id="settingsPanel" class="ja-panel" hidden>
+                <form id="settingsForm">
+                    <div class="ja-settings">
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="providerType">Provider protocol</label>
+                            <select is="emby-select" id="providerType">
+                                <option value="0">OpenAI Responses API</option>
+                                <option value="1">Anthropic Messages API</option>
+                                <option value="2">OpenAI-compatible Chat Completions</option>
+                            </select>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="model">Model</label>
+                            <input is="emby-input" id="model" type="text" required>
+                        </div>
+                        <div class="inputContainer wide">
+                            <label class="inputLabel inputLabelUnfocused" for="endpoint">Endpoint or base URL</label>
+                            <input is="emby-input" id="endpoint" type="url" placeholder="Leave blank for the provider default">
+                            <div class="fieldDescription">Required for OpenAI-compatible providers. Credentials embedded in URLs are rejected.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="apiKey">API key</label>
+                            <input is="emby-input" id="apiKey" type="password" autocomplete="new-password" placeholder="Leave blank to preserve">
+                            <div id="apiKeyStatus" class="fieldDescription"></div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="apiKeyEnvironmentVariable">API key environment variable</label>
+                            <input is="emby-input" id="apiKeyEnvironmentVariable" type="text" placeholder="Optional; takes precedence">
+                        </div>
+                    </div>
+
+                    <div class="ja-checks">
+                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateOverview" type="checkbox"><span>Generate overview</span></label>
+                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateGenres" type="checkbox"><span>Generate genres</span></label>
+                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateTags" type="checkbox"><span>Generate tags</span></label>
+                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateSortTitle" type="checkbox"><span>Generate sort title</span></label>
+                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateContentRating" type="checkbox"><span>Generate content rating</span></label>
+                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="allowSpoilers" type="checkbox"><span>Allow major spoilers</span></label>
+                    </div>
+
+                    <div class="ja-settings">
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="overviewUpdateMode">Overview policy</label>
+                            <select is="emby-select" id="overviewUpdateMode"><option value="0">Replace</option><option value="1">Only if empty</option></select>
+                        </div>
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="genreUpdateMode">Genre policy</label>
+                            <select is="emby-select" id="genreUpdateMode"><option value="0">Merge</option><option value="1">Replace</option><option value="2">Only if empty</option></select>
+                        </div>
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="tagUpdateMode">Tag policy</label>
+                            <select is="emby-select" id="tagUpdateMode"><option value="0">Merge</option><option value="1">Replace</option><option value="2">Only if empty</option></select>
+                        </div>
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="sortTitleUpdateMode">Sort title policy</label>
+                            <select is="emby-select" id="sortTitleUpdateMode"><option value="0">Replace</option><option value="1">Only if empty</option></select>
+                        </div>
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="contentRatingUpdateMode">Content rating policy</label>
+                            <select is="emby-select" id="contentRatingUpdateMode"><option value="0">Replace</option><option value="1">Only if empty</option></select>
+                            <div class="fieldDescription">Suggestions are limited to exact ratings found on eligible collection members.</div>
+                        </div>
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="overviewStyle">Overview style</label>
+                            <select is="emby-select" id="overviewStyle">
+                                <option value="Neutral and concise">Neutral and concise</option>
+                                <option value="Brief and direct">Brief and direct</option>
+                                <option value="Detailed and informative">Detailed and informative</option>
+                                <option value="Cinematic and engaging">Cinematic and engaging</option>
+                                <option value="Encyclopedic and factual">Encyclopedic and factual</option>
+                                <option value="A curator's recommendation">Curator's recommendation</option>
+                                <option value="Theme and mood focused">Theme and mood focused</option>
+                                <option value="Franchise and continuity focused">Franchise and continuity focused</option>
+                                <option value="__custom__">Custom…</option>
+                            </select>
+                        </div>
+                        <div class="inputContainer" id="overviewStyleCustomContainer" hidden>
+                            <label class="inputLabel inputLabelUnfocused" for="overviewStyleCustom">Custom overview style</label>
+                            <input is="emby-input" id="overviewStyleCustom" type="text" maxlength="500">
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="language">Output language</label>
+                            <input is="emby-input" id="language" type="text">
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="maximumOverviewCharacters">Maximum overview characters</label>
+                            <input is="emby-input" id="maximumOverviewCharacters" type="number" min="100" max="10000">
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="maximumGenres">Maximum genres</label>
+                            <input is="emby-input" id="maximumGenres" type="number" min="1" max="50">
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="maximumTags">Maximum tags</label>
+                            <input is="emby-input" id="maximumTags" type="number" min="1" max="100">
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="maximumContextItems">Maximum context items</label>
+                            <input is="emby-input" id="maximumContextItems" type="number" min="1" max="1000">
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="requestTimeoutSeconds">Request timeout (seconds)</label>
+                            <input is="emby-input" id="requestTimeoutSeconds" type="number" min="10" max="600">
+                        </div>
+                        <div class="inputContainer wide">
+                            <label class="inputLabel inputLabelUnfocused" for="genreAllowList">Genre vocabulary</label>
+                            <textarea is="emby-input" id="genreAllowList" rows="4" placeholder="Comma or newline separated; blank uses genres found on child items"></textarea>
+                        </div>
+                        <div class="inputContainer wide">
+                            <label class="inputLabel inputLabelUnfocused" for="customInstructions">Additional generation instructions</label>
+                            <textarea is="emby-input" id="customInstructions" rows="5" maxlength="4000"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="ja-checks">
+                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="openReviewAfterGeneration" type="checkbox"><span>Open Pending reviews after generating a proposal</span></label>
+                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="clearStoredApiKey" type="checkbox"><span>Remove stored API key when saving</span></label>
+                    </div>
+                    <div class="ja-actions">
+                        <button is="emby-button" type="submit" class="raised button-submit">Save settings</button>
+                        <button is="emby-button" type="button" class="raised" id="testConnection">Test connection</button>
+                        <div id="settingsMessage" class="ja-message" role="status" aria-live="polite"></div>
+                    </div>
+                </form>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            'use strict';
+            var page = document.getElementById('JellyAnnotatorPage');
+            var loaded = false;
+            var openReviewAfterGeneration = false;
+
+            function api(path, options) {
+                var request = options || {};
+                request.url = ApiClient.getUrl('JellyAnnotator/' + path);
+                request.type = request.type || 'GET';
+                request.dataType = 'json';
+                if (request.data) {
+                    request.contentType = 'application/json';
+                }
+                return ApiClient.ajax(request).then(normalizeResponse);
+            }
+
+            function normalizeResponse(value) {
+                if (Array.isArray(value)) {
+                    return value.map(normalizeResponse);
+                }
+                if (!value || typeof value !== 'object') {
+                    return value;
+                }
+
+                var normalized = {};
+                Object.keys(value).forEach(function (key) {
+                    var normalizedKey = key.charAt(0).toLowerCase() + key.slice(1);
+                    normalized[normalizedKey] = normalizeResponse(value[key]);
+                });
+                return normalized;
+            }
+
+            function byId(id) { return page.querySelector('#' + id); }
+            function value(id) { return byId(id).value; }
+            function checked(id) { return byId(id).checked; }
+            function numberValue(id) { return Number.parseInt(value(id), 10); }
+            function listValue(text) {
+                return text.split(/[,\n]/).map(function (item) { return item.trim(); }).filter(Boolean);
+            }
+
+            function message(text, kind) {
+                setMessage('globalMessage', text, kind);
+            }
+
+            function settingsMessage(text, kind) {
+                setMessage('settingsMessage', text, kind);
+            }
+
+            function setMessage(targetId, text, kind) {
+                var target = byId(targetId);
+                target.textContent = text || '';
+                target.className = 'ja-message' + (kind ? ' ' + kind : '');
+            }
+
+            function errorText(error) {
+                if (error && error.responseJSON) {
+                    var problem = normalizeResponse(error.responseJSON);
+                    return problem.detail || problem.message || problem.title || 'Request failed.';
+                }
+                if (error && error.statusText) { return error.statusText; }
+                return error && error.message ? error.message : 'Request failed.';
+            }
+
+            function setBusy(button, busy, label) {
+                if (!button) { return; }
+                if (busy) {
+                    if (!button.dataset.originalLabel) { button.dataset.originalLabel = button.textContent; }
+                    button.textContent = label || 'Working…';
+                } else if (button.dataset.originalLabel) {
+                    button.textContent = button.dataset.originalLabel;
+                    delete button.dataset.originalLabel;
+                }
+                button.disabled = busy;
+            }
+
+            function element(name, className, text) {
+                var node = document.createElement(name);
+                if (className) { node.className = className; }
+                if (text !== undefined) { node.textContent = text; }
+                return node;
+            }
+
+            function addMetadata(definition, label, content) {
+                var term = element('dt', '', label);
+                var description = element('dd', '', content || '—');
+                definition.appendChild(term);
+                definition.appendChild(description);
+            }
+
+            function showPanel(panelId) {
+                page.querySelectorAll('.ja-panel').forEach(function (panel) { panel.hidden = panel.id !== panelId; });
+                page.querySelectorAll('.ja-tab').forEach(function (tab) {
+                    tab.setAttribute('aria-selected', String(tab.dataset.panel === panelId));
+                });
+                message('');
+                if (panelId === 'reviewsPanel') { loadReviews(); }
+                if (panelId === 'settingsPanel') { loadSettings(); }
+            }
+
+            function loadCollections() {
+                var search = value('collectionSearch').trim();
+                var path = 'Collections' + (search ? '?search=' + encodeURIComponent(search) : '');
+                var list = byId('collectionsList');
+                list.textContent = '';
+                list.appendChild(element('p', 'ja-muted', 'Loading collections…'));
+                return api(path).then(function (collections) {
+                    list.textContent = '';
+                    if (!collections.length) {
+                        list.appendChild(element('p', 'ja-muted', 'No matching collections were found.'));
+                        return;
+                    }
+                    collections.forEach(function (collection) {
+                        var card = element('article', 'ja-card');
+                        card.appendChild(element('h3', '', collection.name));
+                        card.appendChild(element('p', 'ja-muted', collection.linkedItemCount + ' directly linked item(s)'));
+                        var metadata = element('dl', 'ja-meta');
+                        addMetadata(metadata, 'Sort title', collection.sortTitle);
+                        addMetadata(metadata, 'Content rating', collection.contentRating);
+                        addMetadata(metadata, 'Overview', collection.overview);
+                        addMetadata(metadata, 'Genres', (collection.genres || []).join(', '));
+                        addMetadata(metadata, 'Tags', (collection.tags || []).join(', '));
+                        card.appendChild(metadata);
+                        var actions = element('div', 'ja-actions');
+                        var generate = element('button', 'raised button-submit', 'Generate proposal');
+                        generate.setAttribute('is', 'emby-button');
+                        generate.type = 'button';
+                        generate.addEventListener('click', function () { generateProposal(collection.id, generate); });
+                        actions.appendChild(generate);
+                        card.appendChild(actions);
+                        list.appendChild(card);
+                    });
+                }).catch(function (error) {
+                    list.textContent = '';
+                    message(errorText(error), 'error');
+                });
+            }
+
+            function generateProposal(collectionId, button) {
+                setBusy(button, true, 'Generating…');
+                message('Generating a proposal. The provider only receives sanitized, bounded collection metadata.');
+                api('Collections/' + collectionId + '/Generate', { type: 'POST', data: '{}' })
+                    .then(function () {
+                        return loadPendingReviewCount();
+                    })
+                    .then(function () {
+                        if (openReviewAfterGeneration) {
+                            showPanel('reviewsPanel');
+                        }
+                        message('Proposal generated and ready for review.', 'success');
+                    })
+                    .catch(function (error) { message(errorText(error), 'error'); })
+                    .finally(function () { setBusy(button, false); });
+            }
+
+            function isPending(status) {
+                return status === 0 || String(status).toLowerCase() === 'pending';
+            }
+
+            function updatePendingReviewCount(proposals) {
+                var count = proposals.filter(function (proposal) { return isPending(proposal.status); }).length;
+                var badge = byId('pendingReviewCount');
+                badge.textContent = String(count);
+                badge.setAttribute('aria-label', count + (count === 1 ? ' pending review' : ' pending reviews'));
+                return count;
+            }
+
+            function loadPendingReviewCount() {
+                return api('Proposals?status=Pending')
+                    .then(updatePendingReviewCount)
+                    .catch(function () {
+                        var badge = byId('pendingReviewCount');
+                        badge.textContent = '?';
+                        badge.setAttribute('aria-label', 'Pending review count unavailable');
+                        return null;
+                    });
+            }
+
+            function reviewField(card, proposal, key, label, multiline) {
+                var wrapper = element('div', 'ja-review-field');
+                var checkboxLabel = element('label', 'emby-checkbox-label');
+                var checkbox = document.createElement('input');
+                checkbox.setAttribute('is', 'emby-checkbox');
+                checkbox.type = 'checkbox';
+                var original = proposal.original[key];
+                var proposed = proposal.proposed[key];
+                checkbox.checked = JSON.stringify(original) !== JSON.stringify(proposed);
+                checkbox.dataset.applyField = key;
+                checkboxLabel.appendChild(checkbox);
+                checkboxLabel.appendChild(element('span', '', ' Apply ' + label.toLowerCase()));
+                wrapper.appendChild(checkboxLabel);
+                var control = document.createElement(multiline ? 'textarea' : 'input');
+                if (!multiline) { control.type = 'text'; }
+                control.dataset.reviewField = key;
+                control.value = Array.isArray(proposed) ? proposed.join(', ') : (proposed || '');
+                wrapper.appendChild(control);
+                card.appendChild(wrapper);
+            }
+
+            function loadReviews() {
+                var list = byId('reviewsList');
+                list.textContent = '';
+                list.appendChild(element('p', 'ja-muted', 'Loading proposals…'));
+                return api('Proposals').then(function (proposals) {
+                    list.textContent = '';
+                    updatePendingReviewCount(proposals);
+                    var pending = proposals.filter(function (proposal) { return isPending(proposal.status); });
+                    if (!pending.length) {
+                        list.appendChild(element('p', 'ja-muted', 'There are no pending proposals.'));
+                        return;
+                    }
+                    pending.forEach(function (proposal) {
+                        var card = element('article', 'ja-card');
+                        card.style.marginBottom = '1em';
+                        card.appendChild(element('h3', '', proposal.collectionName));
+                        card.appendChild(element('p', 'ja-muted', proposal.provider + ' / ' + proposal.model + ' · ' + proposal.contextItemCount + ' context item(s)'));
+                        var current = element('dl', 'ja-meta');
+                        addMetadata(current, 'Current sort title', proposal.original.sortTitle);
+                        addMetadata(current, 'Current content rating', proposal.original.contentRating);
+                        addMetadata(current, 'Current overview', proposal.original.overview);
+                        addMetadata(current, 'Current genres', (proposal.original.genres || []).join(', '));
+                        addMetadata(current, 'Current tags', (proposal.original.tags || []).join(', '));
+                        card.appendChild(current);
+                        if (proposal.proposed.warnings && proposal.proposed.warnings.length) {
+                            card.appendChild(element('p', 'ja-warning', proposal.proposed.warnings.join(' ')));
+                        }
+                        reviewField(card, proposal, 'sortTitle', 'Sort title', false);
+                        reviewField(card, proposal, 'contentRating', 'Content rating', false);
+                        reviewField(card, proposal, 'overview', 'Overview', true);
+                        reviewField(card, proposal, 'genres', 'Genres', false);
+                        reviewField(card, proposal, 'tags', 'Tags', false);
+                        var actions = element('div', 'ja-actions');
+                        var apply = element('button', 'raised button-submit', 'Approve selected fields');
+                        apply.setAttribute('is', 'emby-button');
+                        apply.type = 'button';
+                        apply.addEventListener('click', function () { applyProposal(proposal.id, card, apply); });
+                        var reject = element('button', 'raised', 'Reject proposal');
+                        reject.setAttribute('is', 'emby-button');
+                        reject.type = 'button';
+                        reject.addEventListener('click', function () { rejectProposal(proposal.id, reject); });
+                        actions.appendChild(apply);
+                        actions.appendChild(reject);
+                        card.appendChild(actions);
+                        list.appendChild(card);
+                    });
+                }).catch(function (error) {
+                    list.textContent = '';
+                    message(errorText(error), 'error');
+                });
+            }
+
+            function applyProposal(proposalId, card, button, force) {
+                var getCheck = function (key) { return card.querySelector('[data-apply-field="' + key + '"]').checked; };
+                var getValue = function (key) { return card.querySelector('[data-review-field="' + key + '"]').value; };
+                var payload = {
+                    applySortTitle: getCheck('sortTitle'),
+                    applyContentRating: getCheck('contentRating'),
+                    applyOverview: getCheck('overview'),
+                    applyGenres: getCheck('genres'),
+                    applyTags: getCheck('tags'),
+                    sortTitle: getValue('sortTitle'),
+                    contentRating: getValue('contentRating'),
+                    overview: getValue('overview'),
+                    genres: listValue(getValue('genres')),
+                    tags: listValue(getValue('tags')),
+                    force: Boolean(force)
+                };
+                setBusy(button, true, force ? 'Applying…' : 'Approving…');
+                api('Proposals/' + proposalId + '/Apply', { type: 'POST', data: JSON.stringify(payload) })
+                    .then(function () {
+                        message('Approved metadata was saved to the collection.', 'success');
+                        return loadReviews();
+                    })
+                    .catch(function (error) {
+                        if (error && error.status === 409 && !force && window.confirm('The collection changed after generation. Apply the reviewed fields anyway?')) {
+                            return applyProposal(proposalId, card, button, true);
+                        }
+                        message(errorText(error), 'error');
+                    })
+                    .finally(function () { setBusy(button, false); });
+            }
+
+            function rejectProposal(proposalId, button) {
+                if (!window.confirm('Reject this proposal without changing the collection?')) { return; }
+                setBusy(button, true, 'Rejecting…');
+                api('Proposals/' + proposalId + '/Reject', { type: 'POST', data: '{}' })
+                    .then(function () {
+                        message('Proposal rejected. No collection metadata was changed.', 'success');
+                        return loadReviews();
+                    })
+                    .catch(function (error) { message(errorText(error), 'error'); })
+                    .finally(function () { setBusy(button, false); });
+            }
+
+            function setValue(id, newValue) { byId(id).value = newValue === null || newValue === undefined ? '' : String(newValue); }
+            function setChecked(id, newValue) { byId(id).checked = Boolean(newValue); }
+            function syncOverviewStyleInput() {
+                var custom = value('overviewStyle') === '__custom__';
+                byId('overviewStyleCustomContainer').hidden = !custom;
+                byId('overviewStyleCustom').required = custom;
+            }
+            function setOverviewStyle(style) {
+                var normalized = style || 'Neutral and concise';
+                var preset = Array.prototype.some.call(byId('overviewStyle').options, function (option) {
+                    return option.value === normalized && option.value !== '__custom__';
+                });
+                setValue('overviewStyle', preset ? normalized : '__custom__');
+                setValue('overviewStyleCustom', preset ? '' : normalized);
+                syncOverviewStyleInput();
+            }
+            function getOverviewStyle() {
+                return value('overviewStyle') === '__custom__'
+                    ? value('overviewStyleCustom')
+                    : value('overviewStyle');
+            }
+            function enumValue(rawValue, names) {
+                if (typeof rawValue === 'number') { return rawValue; }
+                var normalized = String(rawValue || '').replace(/[^a-z]/gi, '').toLowerCase();
+                var index = names.indexOf(normalized);
+                return index >= 0 ? index : 0;
+            }
+
+            function applySettingsResponse(response) {
+                var config = response.configuration;
+                setValue('providerType', enumValue(config.providerType, ['openai', 'anthropic', 'openaicompatible']));
+                setValue('endpoint', config.endpoint);
+                setValue('model', config.model);
+                setValue('apiKeyEnvironmentVariable', config.apiKeyEnvironmentVariable);
+                setChecked('generateOverview', config.generateOverview);
+                setChecked('generateGenres', config.generateGenres);
+                setChecked('generateTags', config.generateTags);
+                setChecked('generateSortTitle', config.generateSortTitle);
+                setChecked('generateContentRating', config.generateContentRating);
+                openReviewAfterGeneration = Boolean(config.openReviewAfterGeneration);
+                setChecked('openReviewAfterGeneration', openReviewAfterGeneration);
+                setValue('overviewUpdateMode', enumValue(config.overviewUpdateMode, ['replace', 'onlyifempty']));
+                setValue('genreUpdateMode', enumValue(config.genreUpdateMode, ['merge', 'replace', 'onlyifempty']));
+                setValue('tagUpdateMode', enumValue(config.tagUpdateMode, ['merge', 'replace', 'onlyifempty']));
+                setValue('sortTitleUpdateMode', enumValue(config.sortTitleUpdateMode, ['replace', 'onlyifempty']));
+                setValue('contentRatingUpdateMode', enumValue(config.contentRatingUpdateMode, ['replace', 'onlyifempty']));
+                setOverviewStyle(config.overviewStyle);
+                setValue('language', config.language);
+                setChecked('allowSpoilers', config.allowSpoilers);
+                setValue('maximumOverviewCharacters', config.maximumOverviewCharacters);
+                setValue('maximumGenres', config.maximumGenres);
+                setValue('maximumTags', config.maximumTags);
+                setValue('maximumContextItems', config.maximumContextItems);
+                setValue('requestTimeoutSeconds', config.requestTimeoutSeconds);
+                setValue('genreAllowList', config.genreAllowList);
+                setValue('customInstructions', config.customInstructions);
+                byId('apiKey').value = '';
+                setChecked('clearStoredApiKey', false);
+                byId('apiKeyStatus').textContent = response.hasApiKey
+                    ? 'A usable key is configured (' + response.apiKeySource + ').'
+                    : 'No API key is configured. A key may be optional for a local compatible endpoint.';
+            }
+
+            function loadSettings() {
+                settingsMessage('');
+                return api('Settings')
+                    .then(applySettingsResponse)
+                    .catch(function (error) { settingsMessage(errorText(error), 'error'); });
+            }
+
+            function settingsPayload() {
+                return {
+                    configuration: {
+                        providerType: numberValue('providerType'),
+                        endpoint: value('endpoint'),
+                        model: value('model'),
+                        apiKeyEnvironmentVariable: value('apiKeyEnvironmentVariable'),
+                        generateOverview: checked('generateOverview'),
+                        generateGenres: checked('generateGenres'),
+                        generateTags: checked('generateTags'),
+                        generateSortTitle: checked('generateSortTitle'),
+                        generateContentRating: checked('generateContentRating'),
+                        openReviewAfterGeneration: checked('openReviewAfterGeneration'),
+                        overviewUpdateMode: numberValue('overviewUpdateMode'),
+                        genreUpdateMode: numberValue('genreUpdateMode'),
+                        tagUpdateMode: numberValue('tagUpdateMode'),
+                        sortTitleUpdateMode: numberValue('sortTitleUpdateMode'),
+                        contentRatingUpdateMode: numberValue('contentRatingUpdateMode'),
+                        overviewStyle: getOverviewStyle(),
+                        language: value('language'),
+                        allowSpoilers: checked('allowSpoilers'),
+                        maximumOverviewCharacters: numberValue('maximumOverviewCharacters'),
+                        maximumGenres: numberValue('maximumGenres'),
+                        maximumTags: numberValue('maximumTags'),
+                        maximumContextItems: numberValue('maximumContextItems'),
+                        requestTimeoutSeconds: numberValue('requestTimeoutSeconds'),
+                        genreAllowList: value('genreAllowList'),
+                        customInstructions: value('customInstructions')
+                    },
+                    apiKey: value('apiKey') || null,
+                    clearStoredApiKey: checked('clearStoredApiKey')
+                };
+            }
+
+            function saveSettings(event) {
+                event.preventDefault();
+                Dashboard.showLoadingMsg();
+                settingsMessage('Saving settings…');
+                api('Settings', { type: 'PUT', data: JSON.stringify(settingsPayload()) })
+                    .then(function (response) {
+                        applySettingsResponse(response);
+                        settingsMessage('Settings saved.', 'success');
+                    })
+                    .catch(function (error) { settingsMessage(errorText(error), 'error'); })
+                    .finally(function () { Dashboard.hideLoadingMsg(); });
+            }
+
+            function testConnection(button) {
+                setBusy(button, true, 'Testing…');
+                settingsMessage('Testing provider connection…');
+                api('Settings/Test', { type: 'POST', data: '{}' })
+                    .then(function (result) { settingsMessage(result.message, result.success ? 'success' : 'error'); })
+                    .catch(function (error) { settingsMessage(errorText(error), 'error'); })
+                    .finally(function () { setBusy(button, false); });
+            }
+
+            function initialize() {
+                if (loaded) { return; }
+                loaded = true;
+                page.querySelectorAll('.ja-tab').forEach(function (tab) {
+                    tab.addEventListener('click', function () { showPanel(tab.dataset.panel); });
+                });
+                byId('refreshCollections').addEventListener('click', loadCollections);
+                byId('collectionSearch').addEventListener('keydown', function (event) {
+                    if (event.key === 'Enter') { event.preventDefault(); loadCollections(); }
+                });
+                byId('refreshReviews').addEventListener('click', loadReviews);
+                byId('settingsForm').addEventListener('submit', saveSettings);
+                byId('testConnection').addEventListener('click', function () { testConnection(this); });
+                byId('overviewStyle').addEventListener('change', syncOverviewStyleInput);
+            }
+
+            page.addEventListener('viewshow', function () {
+                initialize();
+                loadCollections();
+                loadPendingReviewCount();
+                loadSettings();
+            });
+        }());
+    </script>
+</div>
+</body>
+</html>
