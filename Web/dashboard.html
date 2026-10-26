@@ -18,8 +18,9 @@
         .ja-panel[hidden] { display: none; }
         .ja-toolbar { display: flex; flex-wrap: wrap; gap: .75em; align-items: flex-end; margin-bottom: 1em; }
         .ja-toolbar .inputContainer { flex: 1 1 18em; margin-bottom: 0; }
-        #collectionSearch, #refreshCollections, #queueAllCollections { height: 2.75em; min-height: 2.75em; box-sizing: border-box; }
+        #collectionSearch, #collectionTrackingFilter, #refreshCollections, #queueAllCollections { height: 2.75em; min-height: 2.75em; box-sizing: border-box; }
         #refreshCollections, #queueAllCollections { margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
+        .ja-tracking-filter { flex: 0 1 16em; margin-bottom: 0; }
         .ja-pager { display: flex; align-items: center; justify-content: center; gap: .75em; margin: 1.25em 0; }
         .ja-page-info { min-width: 12em; text-align: center; }
         .ja-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); gap: 1em; }
@@ -28,6 +29,7 @@
         .ja-collection-card .ja-generation-actions { margin-top: auto; padding-top: 1em; }
         .ja-card h3 { margin-top: 0; }
         .ja-muted { opacity: .72; }
+        .ja-activity-summary { white-space: pre-line; line-height: 1.45; }
         .ja-meta { font-size: .92em; overflow-wrap: anywhere; }
         .ja-meta dt { font-weight: 600; margin-top: .65em; }
         .ja-meta dd { margin-left: 0; white-space: pre-wrap; }
@@ -70,6 +72,19 @@
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="collectionSearch">Search collections</label>
                         <input is="emby-input" id="collectionSearch" type="search" autocomplete="off">
+                    </div>
+                    <div class="selectContainer ja-tracking-filter">
+                        <label class="selectLabel" for="collectionTrackingFilter">Activity</label>
+                        <select is="emby-select" id="collectionTrackingFilter">
+                            <option value="All">All collections</option>
+                            <option value="NeverGenerated">Never generated</option>
+                            <option value="Generated">Generated previously</option>
+                            <option value="Queued">Queued</option>
+                            <option value="Generating">Generating</option>
+                            <option value="Failed">Last attempt failed</option>
+                            <option value="Applied">Applied previously</option>
+                            <option value="PendingReview">Pending review</option>
+                        </select>
                     </div>
                     <button is="emby-button" type="button" class="raised button-submit" id="refreshCollections">Refresh</button>
                     <button is="emby-button" type="button" class="raised" id="queueAllCollections">Queue all collections</button>
@@ -286,12 +301,11 @@
             var reviewStartIndex = 0;
             var reviewPageSize = 25;
             var maximumConcurrentGenerations = 2;
-            var activeGenerationCount = 0;
-            var generationQueue = [];
-            var generationJobs = Object.create(null);
-            var generationBatchSucceeded = 0;
-            var generationBatchFailed = 0;
+            var collectionTotalCount = 0;
             var queueAllLoading = false;
+            var generationQueuePollTimer = null;
+            var previousActiveJobCount = 0;
+            var monitorQueueForReview = false;
 
             function api(path, options) {
                 var request = options || {};
@@ -391,23 +405,35 @@
                     tab.setAttribute('aria-selected', String(tab.dataset.panel === panelId));
                 });
                 message('');
+                if (panelId === 'collectionsPanel') { loadCollections(false); }
                 if (panelId === 'reviewsPanel') { loadReviews(); }
                 if (panelId === 'settingsPanel') { loadSettings(); }
             }
 
-            function loadCollections(resetPage) {
-                if (resetPage) { collectionStartIndex = 0; }
+            function collectionListPath() {
                 var search = value('collectionSearch').trim();
-                var path = 'Collections?startIndex=' + collectionStartIndex + '&limit=' + collectionPageSize
+                return 'Collections?startIndex=' + collectionStartIndex + '&limit=' + collectionPageSize
+                    + '&trackingFilter=' + encodeURIComponent(value('collectionTrackingFilter'))
                     + (search ? '&search=' + encodeURIComponent(search) : '');
+            }
+
+            function loadCollections(resetPage, preserveScroll) {
+                if (resetPage) { collectionStartIndex = 0; }
+                var scrollState = preserveScroll
+                    ? { windowTop: window.pageYOffset, pageTop: page.scrollTop }
+                    : null;
                 var list = byId('collectionsList');
-                list.textContent = '';
-                list.appendChild(element('p', 'ja-muted', 'Loading collections…'));
-                return api(path).then(function (result) {
+                if (!preserveScroll) {
+                    list.textContent = '';
+                    list.appendChild(element('p', 'ja-muted', 'Loading collections…'));
+                }
+                return api(collectionListPath()).then(function (result) {
                     var collections = result.items || [];
+                    collectionTotalCount = result.totalCount;
+                    updateQueueAllButton();
                     if (!collections.length && collectionStartIndex > 0 && collectionStartIndex >= result.totalCount) {
                         collectionStartIndex = Math.max(0, collectionStartIndex - collectionPageSize);
-                        return loadCollections(false);
+                        return loadCollections(false, preserveScroll);
                     }
 
                     collectionStartIndex = result.startIndex;
@@ -426,8 +452,10 @@
                     }
                     collections.forEach(function (collection) {
                         var card = element('article', 'ja-card ja-collection-card');
+                        card.setAttribute('data-collection-card-id', collection.id);
                         card.appendChild(element('h3', '', collection.name));
                         card.appendChild(element('p', 'ja-muted', collection.linkedItemCount + ' directly linked item(s)'));
+                        appendCollectionActivity(card);
                         var metadata = element('dl', 'ja-meta');
                         addMetadata(metadata, 'Sort title', collection.sortTitle);
                         addMetadata(metadata, 'Content rating', collection.contentRating);
@@ -449,104 +477,145 @@
                         actions.appendChild(generationStatus);
                         card.appendChild(actions);
                         list.appendChild(card);
-                        if (generationJobs[collection.id]) {
-                            bindGenerationControls(generationJobs[collection.id], generate, generationStatus);
-                        }
+                        updateCollectionActivity(card, collection.activity || {});
                     });
+                    if (scrollState) {
+                        window.requestAnimationFrame(function () {
+                            window.scrollTo(0, scrollState.windowTop);
+                            page.scrollTop = scrollState.pageTop;
+                        });
+                    }
                 }).catch(function (error) {
                     list.textContent = '';
                     message(errorText(error), 'error');
                 });
             }
 
-            function bindGenerationControls(job, button, status) {
-                job.button = button;
-                job.status = status;
-                updateGenerationJobVisual(job);
-            }
-
-            function updateGenerationJobVisual(job) {
-                if (!job.button || !job.status) { return; }
-                var running = job.state === 'running';
-                job.button.disabled = job.state === 'queued' || running;
-                job.button.setAttribute('aria-disabled', String(job.button.disabled));
-                job.button.setAttribute('aria-busy', String(running));
-                job.button.textContent = running ? 'Generating…' : (job.state === 'queued' ? 'Queued…' : 'Generate proposal');
-                job.status.textContent = job.message || '';
-                job.status.className = 'ja-message' + (job.kind ? ' ' + job.kind : '');
-            }
-
-            function updateGenerationQueueStatus() {
-                var queued = generationQueue.length;
-                var target = byId('generationQueueStatus');
-                updateQueueAllButton();
-                if (activeGenerationCount === 0 && queued === 0) {
-                    target.textContent = '';
-                    return;
+            function enumName(rawValue) {
+                if (typeof rawValue === 'number') {
+                    return ['queued', 'running', 'completed', 'failed'][rawValue] || '';
                 }
+                return String(rawValue || '').toLowerCase();
+            }
 
-                target.textContent = activeGenerationCount + ' generating, ' + queued + ' queued (limit '
-                    + maximumConcurrentGenerations + ').';
+            function formatActivityDate(rawValue) {
+                if (!rawValue) { return ''; }
+                var parsed = new Date(rawValue);
+                return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
+            }
+
+            function appendCollectionActivity(card) {
+                var summary = element('p', 'ja-muted ja-activity-summary');
+                summary.setAttribute('data-collection-activity-summary', 'true');
+                card.appendChild(summary);
+                var failure = element('p', 'ja-message error');
+                failure.setAttribute('data-collection-activity-error', 'true');
+                failure.hidden = true;
+                card.appendChild(failure);
+            }
+
+            function updateCollectionActivity(card, activity) {
+                var count = Number(activity.generationCount) || 0;
+                var status = enumName(activity.activeJobStatus);
+                var parts = [count === 0
+                    ? 'Never successfully generated'
+                    : 'Generated ' + count + (count === 1 ? ' time' : ' times')];
+                if (status === 'queued') { parts.push('Queued'); }
+                if (status === 'running') { parts.push('Generating now'); }
+                if (activity.lastGeneratedAtUtc) {
+                    parts.push('Last generated ' + formatActivityDate(activity.lastGeneratedAtUtc));
+                }
+                if (activity.lastAppliedAtUtc) {
+                    parts.push('Last applied ' + formatActivityDate(activity.lastAppliedAtUtc));
+                }
+                if (activity.hasPendingReview) { parts.push('Pending review'); }
+                if (!status && activity.lastGenerationSucceeded === false) { parts.push('Last attempt failed'); }
+                card.querySelector('[data-collection-activity-summary]').textContent = parts.join('\n');
+                var failure = card.querySelector('[data-collection-activity-error]');
+                var showFailure = !status
+                    && activity.lastGenerationSucceeded === false
+                    && Boolean(activity.lastGenerationError);
+                failure.textContent = showFailure ? activity.lastGenerationError : '';
+                failure.hidden = !showFailure;
+
+                var button = card.querySelector('[data-generation-collection-id]');
+                var generationStatus = button ? button.parentNode.querySelector('.ja-message') : null;
+                if (!button || !generationStatus) { return; }
+                var wasActive = button.textContent === 'Queuing…'
+                    || button.textContent === 'Queued…'
+                    || button.textContent === 'Generating…';
+                if (status === 'queued' || status === 'running') {
+                    button.disabled = true;
+                    button.setAttribute('aria-disabled', 'true');
+                    button.setAttribute('aria-busy', String(status === 'running'));
+                    button.textContent = status === 'running' ? 'Generating…' : 'Queued…';
+                    generationStatus.textContent = status === 'running'
+                        ? 'The server is generating this proposal.'
+                        : 'Waiting in the server queue.';
+                    generationStatus.className = 'ja-message';
+                } else if (wasActive) {
+                    button.disabled = false;
+                    button.setAttribute('aria-disabled', 'false');
+                    button.setAttribute('aria-busy', 'false');
+                    button.textContent = 'Generate proposal';
+                    delete button.dataset.originalLabel;
+                    generationStatus.textContent = activity.lastGenerationSucceeded === false
+                        ? 'Generation failed.'
+                        : (activity.hasPendingReview ? 'Proposal ready for review.' : '');
+                    generationStatus.className = 'ja-message'
+                        + (activity.lastGenerationSucceeded === false ? ' error' : ' success');
+                }
+            }
+
+            function refreshVisibleCollectionActivity() {
+                var cards = Array.prototype.slice.call(page.querySelectorAll('[data-collection-card-id]'));
+                if (!cards.length) { return Promise.resolve(); }
+                var query = cards.map(function (card) {
+                    return 'collectionIds=' + encodeURIComponent(card.getAttribute('data-collection-card-id'));
+                }).join('&');
+                return api('Collections/Activity?' + query).then(function (activities) {
+                    (activities || []).forEach(function (activity) {
+                        var card = page.querySelector('[data-collection-card-id="' + activity.collectionId + '"]');
+                        if (card) { updateCollectionActivity(card, activity); }
+                    });
+                }).catch(function (error) {
+                    byId('generationQueueStatus').textContent = 'Collection status unavailable: ' + errorText(error);
+                });
             }
 
             function updateQueueAllButton() {
                 var button = byId('queueAllCollections');
-                var busy = queueAllLoading || activeGenerationCount > 0 || generationQueue.length > 0;
+                var busy = queueAllLoading || collectionTotalCount === 0;
                 button.disabled = busy;
                 button.setAttribute('aria-disabled', String(busy));
                 button.setAttribute('aria-busy', String(queueAllLoading));
-                button.textContent = queueAllLoading ? 'Loading collections...' : 'Queue all collections';
-            }
-
-            function loadAllCollectionIds(search, startIndex, collectionIds) {
-                var pageSize = 100;
-                var path = 'Collections?startIndex=' + startIndex + '&limit=' + pageSize
-                    + (search ? '&search=' + encodeURIComponent(search) : '');
-                return api(path).then(function (result) {
-                    var items = result.items || [];
-                    items.forEach(function (collection) { collectionIds.push(collection.id); });
-                    var nextIndex = result.startIndex + items.length;
-                    if (items.length > 0 && nextIndex < result.totalCount) {
-                        return loadAllCollectionIds(search, nextIndex, collectionIds);
-                    }
-
-                    return collectionIds;
-                });
+                button.textContent = queueAllLoading ? 'Queuing collections…' : 'Queue all matching filter';
             }
 
             function queueAllCollections() {
-                if (queueAllLoading || activeGenerationCount > 0 || generationQueue.length > 0) { return; }
+                if (queueAllLoading || collectionTotalCount === 0) { return; }
+                var search = value('collectionSearch').trim();
+                var trackingFilter = value('collectionTrackingFilter');
+                if (!window.confirm(
+                    'Queue ' + collectionTotalCount + ' collection(s) matching the current search and activity filter?'
+                    + ' Jobs continue on the Jellyfin server if this dashboard is closed.'
+                    + ' Collections with pending reviews can receive another proposal.')) {
+                    return;
+                }
+
                 queueAllLoading = true;
                 updateQueueAllButton();
-                var search = value('collectionSearch').trim();
-                loadAllCollectionIds(search, 0, [])
-                    .then(function (collectionIds) {
-                        var seen = Object.create(null);
-                        var uniqueIds = collectionIds.filter(function (collectionId) {
-                            if (seen[collectionId] || generationJobs[collectionId]) { return false; }
-                            seen[collectionId] = true;
-                            return true;
-                        });
-                        if (!uniqueIds.length) {
-                            message(search
-                                ? 'No collections match the current search.'
-                                : 'There are no collections to queue.');
-                            return;
+                var path = 'Collections/Queue?trackingFilter=' + encodeURIComponent(trackingFilter)
+                    + (search ? '&search=' + encodeURIComponent(search) : '');
+                api(path, { type: 'POST', data: '{}' })
+                    .then(function (result) {
+                        monitorQueueForReview = monitorQueueForReview || result.queuedCount > 0;
+                        var summary = result.queuedCount + ' collection(s) added to the server queue.';
+                        if (result.alreadyActiveCount > 0) {
+                            summary += ' ' + result.alreadyActiveCount + ' already queued or running.';
                         }
-
-                        var scope = search ? ' matching the current search' : '';
-                        if (!window.confirm(
-                            'Queue ' + uniqueIds.length + ' collection(s)' + scope
-                            + '? This may send one provider request and create one pending review per collection, including collections that already have a pending review.')) {
-                            return;
-                        }
-
-                        uniqueIds.forEach(function (collectionId) {
-                            var button = page.querySelector('[data-generation-collection-id="' + collectionId + '"]');
-                            var status = button ? button.parentNode.querySelector('.ja-message') : null;
-                            enqueueGeneration(collectionId, button, status);
-                        });
-                        message(uniqueIds.length + ' collection(s) added to the generation queue.', 'success');
+                        message(summary, 'success');
+                        return refreshGenerationState();
                     })
                     .catch(function (error) { message(errorText(error), 'error'); })
                     .finally(function () {
@@ -556,76 +625,65 @@
             }
 
             function enqueueGeneration(collectionId, button, status) {
-                if (generationJobs[collectionId]) { return; }
-                if (activeGenerationCount === 0 && generationQueue.length === 0) {
-                    generationBatchSucceeded = 0;
-                    generationBatchFailed = 0;
-                }
-
-                var job = {
-                    collectionId: collectionId,
-                    button: button,
-                    status: status,
-                    state: 'queued',
-                    message: 'Waiting to generate.',
-                    kind: ''
-                };
-                generationJobs[collectionId] = job;
-                generationQueue.push(job);
-                updateGenerationJobVisual(job);
-                updateGenerationQueueStatus();
-                processGenerationQueue();
-            }
-
-            function processGenerationQueue() {
-                while (activeGenerationCount < maximumConcurrentGenerations && generationQueue.length > 0) {
-                    runGenerationJob(generationQueue.shift());
-                }
-                updateGenerationQueueStatus();
-            }
-
-            function runGenerationJob(job) {
-                activeGenerationCount += 1;
-                job.state = 'running';
-                job.message = 'Generating proposal…';
-                updateGenerationJobVisual(job);
-                updateGenerationQueueStatus();
-
-                api('Collections/' + job.collectionId + '/Generate', { type: 'POST', data: '{}' })
-                    .then(function () {
-                        generationBatchSucceeded += 1;
-                        job.state = 'complete';
-                        job.message = 'Proposal ready for review.';
-                        job.kind = 'success';
-                        return loadPendingReviewCount();
+                setBusy(button, true, 'Queuing…');
+                status.textContent = 'Adding to the server queue…';
+                api('Collections/' + collectionId + '/Generate', { type: 'POST', data: '{}' })
+                    .then(function (result) {
+                        monitorQueueForReview = monitorQueueForReview || result.queuedCount > 0;
+                        status.textContent = result.queuedCount > 0
+                            ? 'Waiting in the server queue.'
+                            : 'Already queued or generating.';
+                        status.className = 'ja-message success';
+                        return refreshGenerationState();
                     })
                     .catch(function (error) {
-                        generationBatchFailed += 1;
-                        job.state = 'failed';
-                        job.message = errorText(error);
-                        job.kind = 'error';
-                    })
-                    .finally(function () {
-                        activeGenerationCount -= 1;
-                        delete generationJobs[job.collectionId];
-                        updateGenerationJobVisual(job);
-                        processGenerationQueue();
-                        finishGenerationBatchIfIdle();
+                        status.textContent = errorText(error);
+                        status.className = 'ja-message error';
+                        setBusy(button, false);
                     });
             }
 
-            function finishGenerationBatchIfIdle() {
-                if (activeGenerationCount > 0 || generationQueue.length > 0) { return; }
-                updateGenerationQueueStatus();
-                var summary = generationBatchSucceeded + ' proposal(s) generated';
-                if (generationBatchFailed > 0) {
-                    summary += '; ' + generationBatchFailed + ' failed';
+            function refreshGenerationState() {
+                return Promise.all([loadGenerationQueueStatus(), refreshVisibleCollectionActivity(), loadPendingReviewCount()]);
+            }
+
+            function loadGenerationQueueStatus() {
+                if (generationQueuePollTimer) {
+                    window.clearTimeout(generationQueuePollTimer);
+                    generationQueuePollTimer = null;
                 }
-                summary += '.';
-                if (openReviewAfterGeneration && generationBatchSucceeded > 0) {
-                    showPanel('reviewsPanel');
-                }
-                message(summary, generationBatchFailed > 0 ? 'error' : 'success');
+                return api('GenerationQueue/Status')
+                    .then(function (result) {
+                        var queued = Number(result.queuedCount) || 0;
+                        var running = Number(result.runningCount) || 0;
+                        var active = queued + running;
+                        var target = byId('generationQueueStatus');
+                        target.textContent = active === 0
+                            ? ''
+                            : running + ' generating, ' + queued + ' queued on the Jellyfin server (limit '
+                                + maximumConcurrentGenerations + ').';
+
+                        if (active > 0) {
+                            generationQueuePollTimer = window.setTimeout(function () {
+                                Promise.all([loadGenerationQueueStatus(), refreshVisibleCollectionActivity(), loadPendingReviewCount()]);
+                            }, 2500);
+                        } else if (previousActiveJobCount > 0) {
+                            if (value('collectionTrackingFilter') !== 'All') {
+                                loadCollections(false, true);
+                            }
+                            loadPendingReviewCount();
+                            if (monitorQueueForReview && openReviewAfterGeneration) {
+                                showPanel('reviewsPanel');
+                            }
+                            monitorQueueForReview = false;
+                            message('The server generation queue has finished.', 'success');
+                        }
+                        previousActiveJobCount = active;
+                        return result;
+                    })
+                    .catch(function (error) {
+                        byId('generationQueueStatus').textContent = 'Queue status unavailable: ' + errorText(error);
+                    });
             }
 
             function updatePendingReviewCount(count) {
@@ -856,7 +914,6 @@
                 setChecked('openReviewAfterGeneration', openReviewAfterGeneration);
                 maximumConcurrentGenerations = Math.max(1, Math.min(5, Number(config.maximumConcurrentGenerations) || 2));
                 setValue('maximumConcurrentGenerations', maximumConcurrentGenerations);
-                processGenerationQueue();
                 setValue('overviewUpdateMode', enumValue(config.overviewUpdateMode, ['replace', 'onlyifempty']));
                 setValue('genreUpdateMode', enumValue(config.genreUpdateMode, ['merge', 'replace', 'onlyifempty']));
                 setValue('tagUpdateMode', enumValue(config.tagUpdateMode, ['merge', 'replace', 'onlyifempty']));
@@ -960,6 +1017,7 @@
                 });
                 byId('refreshCollections').addEventListener('click', function () { loadCollections(false); });
                 byId('queueAllCollections').addEventListener('click', queueAllCollections);
+                byId('collectionTrackingFilter').addEventListener('change', function () { loadCollections(true); });
                 byId('collectionSearch').addEventListener('keydown', function (event) {
                     if (event.key === 'Enter') { event.preventDefault(); loadCollections(true); }
                 });
@@ -995,6 +1053,14 @@
                 loadCollections();
                 loadPendingReviewCount();
                 loadSettings();
+                loadGenerationQueueStatus();
+            });
+
+            page.addEventListener('viewhide', function () {
+                if (generationQueuePollTimer) {
+                    window.clearTimeout(generationQueuePollTimer);
+                    generationQueuePollTimer = null;
+                }
             });
         }());
     </script>

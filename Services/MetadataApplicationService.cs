@@ -123,7 +123,7 @@ public sealed class MetadataApplicationService
             };
             proposal.Status = ProposalStatus.Applied;
             proposal.DecidedAtUtc = DateTimeOffset.UtcNow;
-            await _proposalStore.SaveAsync(proposal, cancellationToken).ConfigureAwait(false);
+            await _proposalStore.SaveAppliedAsync(proposal, cancellationToken).ConfigureAwait(false);
             return proposal;
         }
         finally

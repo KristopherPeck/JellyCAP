@@ -21,5 +21,8 @@ public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
         serviceCollection.AddSingleton<AiProviderClient>();
         serviceCollection.AddSingleton<ProposalService>();
         serviceCollection.AddSingleton<MetadataApplicationService>();
+        serviceCollection.AddSingleton<GenerationQueueService>();
+        serviceCollection.AddHostedService<GenerationQueueService>(
+            provider => provider.GetRequiredService<GenerationQueueService>());
     }
 }

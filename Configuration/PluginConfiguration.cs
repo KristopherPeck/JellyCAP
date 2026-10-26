@@ -75,8 +75,8 @@ public sealed class PluginConfiguration : BasePluginConfiguration
     public bool OpenReviewAfterGeneration { get; set; }
 
     /// <summary>
-    /// Gets or sets the maximum number of collection proposals generated concurrently per dashboard session.
-    /// Additional requests remain queued in that dashboard session.
+    /// Gets or sets the maximum number of collection proposals generated concurrently by the server queue.
+    /// Additional requests remain durably queued in the plugin database.
     /// </summary>
     public int MaximumConcurrentGenerations { get; set; } = 2;
 

@@ -31,23 +31,24 @@ public sealed class CollectionContextService
     /// Lists collections by name.
     /// </summary>
     /// <param name="search">Optional case-insensitive name filter.</param>
+    /// <param name="trackingFilter">Optional durable activity filter.</param>
+    /// <param name="activity">Durable generation activity indexed by collection identifier.</param>
     /// <param name="startIndex">Zero-based index of the first result.</param>
     /// <param name="limit">Maximum number of results to return.</param>
     /// <returns>A bounded page of matching collections.</returns>
-    public PagedResult<CollectionSummary> ListCollections(string? search, int startIndex, int limit)
+    public PagedResult<CollectionSummary> ListCollections(
+        string? search,
+        CollectionTrackingFilter trackingFilter,
+        IReadOnlyDictionary<Guid, CollectionGenerationActivity> activity,
+        int startIndex,
+        int limit)
     {
-        var query = new InternalItemsQuery
-        {
-            Recursive = true,
-            IncludeItemTypes = [BaseItemKind.BoxSet],
-            GroupByPresentationUniqueKey = false,
-            DtoOptions = DtoOptions.StoredColumnsOnly
-        };
-
-        var matching = _libraryManager.GetItemList(query)
-            .OfType<BoxSet>()
+        var matching = GetCollections()
             .Where(boxSet => string.IsNullOrWhiteSpace(search)
                 || (boxSet.Name ?? string.Empty).Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Where(boxSet => MatchesTrackingFilter(
+                activity.GetValueOrDefault(boxSet.Id) ?? new CollectionGenerationActivity { CollectionId = boxSet.Id },
+                trackingFilter))
             .OrderBy(boxSet => boxSet.SortName, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         var boundedStartIndex = Math.Max(0, startIndex);
@@ -66,7 +67,9 @@ public sealed class CollectionContextService
                 Overview = boxSet.Overview ?? string.Empty,
                 Genres = Normalize(boxSet.Genres),
                 Tags = Normalize(boxSet.Tags),
-                LinkedItemCount = boxSet.LinkedChildren.Length
+                LinkedItemCount = boxSet.LinkedChildren.Length,
+                Activity = activity.GetValueOrDefault(boxSet.Id)
+                    ?? new CollectionGenerationActivity { CollectionId = boxSet.Id }
             })
             .ToArray();
 
@@ -76,6 +79,56 @@ public sealed class CollectionContextService
             TotalCount = matching.Length,
             StartIndex = boundedStartIndex,
             PageSize = boundedLimit
+        };
+    }
+
+    /// <summary>
+    /// Gets all collection identifiers matching the dashboard search and tracking filter.
+    /// </summary>
+    public Guid[] ListCollectionIds(
+        string? search,
+        CollectionTrackingFilter trackingFilter,
+        IReadOnlyDictionary<Guid, CollectionGenerationActivity> activity)
+    {
+        return GetCollections()
+            .Where(boxSet => string.IsNullOrWhiteSpace(search)
+                || (boxSet.Name ?? string.Empty).Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
+            .Where(boxSet => MatchesTrackingFilter(
+                activity.GetValueOrDefault(boxSet.Id) ?? new CollectionGenerationActivity { CollectionId = boxSet.Id },
+                trackingFilter))
+            .OrderBy(boxSet => boxSet.SortName, StringComparer.OrdinalIgnoreCase)
+            .Select(boxSet => boxSet.Id)
+            .ToArray();
+    }
+
+    private BoxSet[] GetCollections()
+    {
+        var query = new InternalItemsQuery
+        {
+            Recursive = true,
+            IncludeItemTypes = [BaseItemKind.BoxSet],
+            GroupByPresentationUniqueKey = false,
+            DtoOptions = DtoOptions.StoredColumnsOnly
+        };
+
+        return _libraryManager.GetItemList(query).OfType<BoxSet>().ToArray();
+    }
+
+    private static bool MatchesTrackingFilter(
+        CollectionGenerationActivity activity,
+        CollectionTrackingFilter trackingFilter)
+    {
+        return trackingFilter switch
+        {
+            CollectionTrackingFilter.NeverGenerated => activity.GenerationCount == 0,
+            CollectionTrackingFilter.Generated => activity.GenerationCount > 0,
+            CollectionTrackingFilter.Queued => activity.ActiveJobStatus == GenerationJobStatus.Queued,
+            CollectionTrackingFilter.Generating => activity.ActiveJobStatus == GenerationJobStatus.Running,
+            CollectionTrackingFilter.Failed => activity.ActiveJobStatus is null
+                && activity.LastGenerationSucceeded == false,
+            CollectionTrackingFilter.Applied => activity.LastAppliedAtUtc.HasValue,
+            CollectionTrackingFilter.PendingReview => activity.HasPendingReview,
+            _ => true
         };
     }
 

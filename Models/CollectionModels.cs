@@ -1,6 +1,36 @@
 namespace Jellyfin.Plugin.JellyCAP.Models;
 
 /// <summary>
+/// Filters collections by durable JellyCAP activity.
+/// </summary>
+public enum CollectionTrackingFilter
+{
+    /// <summary>Returns every collection.</summary>
+    All,
+
+    /// <summary>Returns collections without a successful generation.</summary>
+    NeverGenerated,
+
+    /// <summary>Returns collections with at least one successful generation.</summary>
+    Generated,
+
+    /// <summary>Returns collections currently waiting in the server queue.</summary>
+    Queued,
+
+    /// <summary>Returns collections currently being generated.</summary>
+    Generating,
+
+    /// <summary>Returns collections whose most recent completed attempt failed.</summary>
+    Failed,
+
+    /// <summary>Returns collections with metadata previously applied by JellyCAP.</summary>
+    Applied,
+
+    /// <summary>Returns collections that currently have at least one pending proposal.</summary>
+    PendingReview
+}
+
+/// <summary>
 /// A collection displayed in the workbench.
 /// </summary>
 public sealed class CollectionSummary
@@ -49,6 +79,44 @@ public sealed class CollectionSummary
     /// Gets or sets the number of direct linked entries.
     /// </summary>
     public int LinkedItemCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets durable generation and review activity for this collection.
+    /// </summary>
+    public CollectionGenerationActivity Activity { get; set; } = new();
+}
+
+/// <summary>
+/// Durable generation summary retained independently of proposal history.
+/// </summary>
+public sealed class CollectionGenerationActivity
+{
+    /// <summary>Gets or sets the collection identifier.</summary>
+    public Guid CollectionId { get; set; }
+
+    /// <summary>Gets or sets the total number of successfully generated proposals.</summary>
+    public long GenerationCount { get; set; }
+
+    /// <summary>Gets or sets the most recent generation-attempt timestamp.</summary>
+    public DateTimeOffset? LastAttemptedAtUtc { get; set; }
+
+    /// <summary>Gets or sets the most recent successful-generation timestamp.</summary>
+    public DateTimeOffset? LastGeneratedAtUtc { get; set; }
+
+    /// <summary>Gets or sets the most recent metadata-application timestamp.</summary>
+    public DateTimeOffset? LastAppliedAtUtc { get; set; }
+
+    /// <summary>Gets or sets whether the most recent completed attempt succeeded.</summary>
+    public bool? LastGenerationSucceeded { get; set; }
+
+    /// <summary>Gets or sets the bounded error from the most recent failed attempt.</summary>
+    public string LastGenerationError { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the current queued or running job status.</summary>
+    public GenerationJobStatus? ActiveJobStatus { get; set; }
+
+    /// <summary>Gets or sets whether at least one proposal is awaiting review.</summary>
+    public bool HasPendingReview { get; set; }
 }
 
 /// <summary>

@@ -20,6 +20,7 @@ public sealed class JellyCAPController : ControllerBase
     private readonly MetadataApplicationService _metadataApplicationService;
     private readonly ProposalService _proposalService;
     private readonly ProposalStore _proposalStore;
+    private readonly GenerationQueueService _generationQueueService;
     private readonly SecretStore _secretStore;
     private readonly ILogger<JellyCAPController> _logger;
 
@@ -31,6 +32,7 @@ public sealed class JellyCAPController : ControllerBase
         MetadataApplicationService metadataApplicationService,
         ProposalService proposalService,
         ProposalStore proposalStore,
+        GenerationQueueService generationQueueService,
         SecretStore secretStore,
         ILogger<JellyCAPController> logger)
     {
@@ -38,6 +40,7 @@ public sealed class JellyCAPController : ControllerBase
         _metadataApplicationService = metadataApplicationService;
         _proposalService = proposalService;
         _proposalStore = proposalStore;
+        _generationQueueService = generationQueueService;
         _secretStore = secretStore;
         _logger = logger;
     }
@@ -150,14 +153,22 @@ public sealed class JellyCAPController : ControllerBase
     /// </summary>
     [HttpGet("Collections")]
     [ProducesResponseType<PagedResult<CollectionSummary>>(StatusCodes.Status200OK)]
-    public ActionResult<PagedResult<CollectionSummary>> GetCollections(
+    public async Task<ActionResult<PagedResult<CollectionSummary>>> GetCollections(
+        CancellationToken cancellationToken,
         [FromQuery] string? search = null,
+        [FromQuery] CollectionTrackingFilter trackingFilter = CollectionTrackingFilter.All,
         [FromQuery] int startIndex = 0,
         [FromQuery] int limit = 50)
     {
         try
         {
-            return Ok(_collectionContextService.ListCollections(search, startIndex, limit));
+            var activity = await _proposalStore.GetCollectionActivityAsync(cancellationToken).ConfigureAwait(false);
+            return Ok(_collectionContextService.ListCollections(
+                search,
+                trackingFilter,
+                activity,
+                startIndex,
+                limit));
         }
         catch (Exception exception)
         {
@@ -166,6 +177,23 @@ public sealed class JellyCAPController : ControllerBase
                 StatusCodes.Status500InternalServerError,
                 new ProblemDetails { Title = "Collections could not be loaded", Detail = exception.Message });
         }
+    }
+
+    /// <summary>
+    /// Gets durable activity for the collection cards currently visible in the dashboard.
+    /// </summary>
+    [HttpGet("Collections/Activity")]
+    [ProducesResponseType<CollectionGenerationActivity[]>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<CollectionGenerationActivity[]>> GetCollectionActivity(
+        CancellationToken cancellationToken,
+        [FromQuery] Guid[] collectionIds)
+    {
+        var requestedIds = collectionIds.Distinct().Take(100).ToArray();
+        var activity = await _proposalStore.GetCollectionActivityAsync(cancellationToken).ConfigureAwait(false);
+        return Ok(requestedIds
+            .Select(collectionId => activity.GetValueOrDefault(collectionId)
+                ?? new CollectionGenerationActivity { CollectionId = collectionId })
+            .ToArray());
     }
 
     /// <summary>
@@ -189,40 +217,69 @@ public sealed class JellyCAPController : ControllerBase
     }
 
     /// <summary>
-    /// Generates a pending metadata proposal for one collection.
+    /// Queues a pending metadata proposal for one collection.
     /// </summary>
     [HttpPost("Collections/{collectionId:guid}/Generate")]
-    [ProducesResponseType<MetadataProposal>(StatusCodes.Status200OK)]
+    [ProducesResponseType<GenerationEnqueueResult>(StatusCodes.Status202Accepted)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
-    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
-    [ProducesResponseType(StatusCodes.Status502BadGateway)]
-    public async Task<ActionResult<MetadataProposal>> Generate(
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+    public async Task<ActionResult<GenerationEnqueueResult>> Generate(
         Guid collectionId,
         CancellationToken cancellationToken)
     {
         try
         {
-            return Ok(await _proposalService.GenerateAsync(collectionId, cancellationToken).ConfigureAwait(false));
+            var result = await _generationQueueService.EnqueueAsync(collectionId, cancellationToken).ConfigureAwait(false);
+            return Accepted(result);
         }
         catch (KeyNotFoundException exception)
         {
             _logger.LogWarning(exception, "JellyCAP collection {CollectionId} was not found during generation.", collectionId);
             return NotFound(new ProblemDetails { Title = "Collection not found", Detail = exception.Message });
         }
-        catch (GenerationCapacityException exception)
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogWarning(exception, "JellyCAP rejected a generation request because the provider concurrency limit was reached.");
+            _logger.LogError(exception, "JellyCAP could not queue collection {CollectionId}.", collectionId);
             return StatusCode(
-                StatusCodes.Status429TooManyRequests,
-                new ProblemDetails { Title = "Provider is busy", Detail = exception.Message });
+                StatusCodes.Status500InternalServerError,
+                new ProblemDetails { Title = "Generation could not be queued", Detail = exception.Message });
+        }
+    }
+
+    /// <summary>
+    /// Queues all collections matching the supplied dashboard filters.
+    /// </summary>
+    [HttpPost("Collections/Queue")]
+    [ProducesResponseType<GenerationEnqueueResult>(StatusCodes.Status202Accepted)]
+    public async Task<ActionResult<GenerationEnqueueResult>> QueueCollections(
+        CancellationToken cancellationToken,
+        [FromQuery] string? search = null,
+        [FromQuery] CollectionTrackingFilter trackingFilter = CollectionTrackingFilter.All)
+    {
+        try
+        {
+            var activity = await _proposalStore.GetCollectionActivityAsync(cancellationToken).ConfigureAwait(false);
+            var collectionIds = _collectionContextService.ListCollectionIds(search, trackingFilter, activity);
+            var result = await _generationQueueService.EnqueueAsync(collectionIds, cancellationToken).ConfigureAwait(false);
+            return Accepted(result);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "JellyCAP proposal generation failed for collection {CollectionId}.", collectionId);
+            _logger.LogError(exception, "JellyCAP could not queue the filtered collection batch.");
             return StatusCode(
-                StatusCodes.Status502BadGateway,
-                new ProblemDetails { Title = "Generation failed", Detail = exception.Message });
+                StatusCodes.Status500InternalServerError,
+                new ProblemDetails { Title = "Collections could not be queued", Detail = exception.Message });
         }
+    }
+
+    /// <summary>
+    /// Gets aggregate durable generation queue state.
+    /// </summary>
+    [HttpGet("GenerationQueue/Status")]
+    [ProducesResponseType<GenerationQueueStatus>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<GenerationQueueStatus>> GetGenerationQueueStatus(CancellationToken cancellationToken)
+    {
+        return Ok(await _proposalStore.GetGenerationQueueStatusAsync(cancellationToken).ConfigureAwait(false));
     }
 
     /// <summary>

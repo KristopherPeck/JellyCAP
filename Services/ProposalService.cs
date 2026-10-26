@@ -13,7 +13,6 @@ public sealed class ProposalService
     private readonly CollectionContextService _collectionContextService;
     private readonly AiProviderClient _providerClient;
     private readonly SecretStore _secretStore;
-    private readonly ProposalStore _proposalStore;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="ProposalService"/> class.
@@ -21,17 +20,15 @@ public sealed class ProposalService
     public ProposalService(
         CollectionContextService collectionContextService,
         AiProviderClient providerClient,
-        SecretStore secretStore,
-        ProposalStore proposalStore)
+        SecretStore secretStore)
     {
         _collectionContextService = collectionContextService;
         _providerClient = providerClient;
         _secretStore = secretStore;
-        _proposalStore = proposalStore;
     }
 
     /// <summary>
-    /// Generates and persists a review proposal for a collection.
+    /// Generates a review proposal for a collection. The queue persists it atomically with job completion.
     /// </summary>
     /// <param name="collectionId">Collection identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
@@ -89,7 +86,6 @@ public sealed class ProposalService
                 : string.Empty
         };
 
-        await _proposalStore.SaveAsync(proposal, cancellationToken).ConfigureAwait(false);
         return proposal;
     }
 
