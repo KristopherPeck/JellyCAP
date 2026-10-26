@@ -62,6 +62,7 @@
                     </div>
                     <button is="emby-button" type="button" class="raised button-submit" id="refreshCollections">Refresh</button>
                 </div>
+                <div id="generationQueueStatus" class="ja-message ja-muted" role="status" aria-live="polite"></div>
                 <div id="collectionsList" class="ja-grid"></div>
                 <div class="ja-pager" aria-label="Collection pages">
                     <button is="emby-button" type="button" class="raised" id="previousCollections">Previous</button>
@@ -187,6 +188,11 @@
                             <input is="emby-input" id="requestTimeoutSeconds" type="number" min="10" max="600">
                         </div>
                         <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="maximumConcurrentGenerations">Concurrent generations per dashboard</label>
+                            <input is="emby-input" id="maximumConcurrentGenerations" type="number" min="1" max="5">
+                            <div class="fieldDescription">Additional collection requests remain queued. Lower this if your provider enforces strict rate limits.</div>
+                        </div>
+                        <div class="inputContainer">
                             <label class="inputLabel inputLabelUnfocused" for="completedProposalRetentionDays">Completed proposal retention (days)</label>
                             <input is="emby-input" id="completedProposalRetentionDays" type="number" min="0" max="3650">
                             <div class="fieldDescription">Applies to both approved and rejected proposals. Use 0 to remove them immediately.</div>
@@ -230,6 +236,12 @@
             var collectionPageSize = 50;
             var reviewStartIndex = 0;
             var reviewPageSize = 25;
+            var maximumConcurrentGenerations = 2;
+            var activeGenerationCount = 0;
+            var generationQueue = [];
+            var generationJobs = Object.create(null);
+            var generationBatchSucceeded = 0;
+            var generationBatchFailed = 0;
 
             function api(path, options) {
                 var request = options || {};
@@ -377,10 +389,17 @@
                         var generate = element('button', 'raised button-submit', 'Generate proposal');
                         generate.setAttribute('is', 'emby-button');
                         generate.type = 'button';
-                        generate.addEventListener('click', function () { generateProposal(collection.id, generate); });
+                        var generationStatus = element('span', 'ja-message');
+                        generate.addEventListener('click', function () {
+                            enqueueGeneration(collection.id, generate, generationStatus);
+                        });
                         actions.appendChild(generate);
+                        actions.appendChild(generationStatus);
                         card.appendChild(actions);
                         list.appendChild(card);
+                        if (generationJobs[collection.id]) {
+                            bindGenerationControls(generationJobs[collection.id], generate, generationStatus);
+                        }
                     });
                 }).catch(function (error) {
                     list.textContent = '';
@@ -388,21 +407,106 @@
                 });
             }
 
-            function generateProposal(collectionId, button) {
-                setBusy(button, true, 'Generating…');
-                message('Generating a proposal. The provider only receives sanitized, bounded collection metadata.');
-                api('Collections/' + collectionId + '/Generate', { type: 'POST', data: '{}' })
+            function bindGenerationControls(job, button, status) {
+                job.button = button;
+                job.status = status;
+                updateGenerationJobVisual(job);
+            }
+
+            function updateGenerationJobVisual(job) {
+                if (!job.button || !job.status) { return; }
+                var running = job.state === 'running';
+                job.button.disabled = job.state === 'queued' || running;
+                job.button.setAttribute('aria-disabled', String(job.button.disabled));
+                job.button.setAttribute('aria-busy', String(running));
+                job.button.textContent = running ? 'Generating…' : (job.state === 'queued' ? 'Queued…' : 'Generate proposal');
+                job.status.textContent = job.message || '';
+                job.status.className = 'ja-message' + (job.kind ? ' ' + job.kind : '');
+            }
+
+            function updateGenerationQueueStatus() {
+                var queued = generationQueue.length;
+                var target = byId('generationQueueStatus');
+                if (activeGenerationCount === 0 && queued === 0) {
+                    target.textContent = '';
+                    return;
+                }
+
+                target.textContent = activeGenerationCount + ' generating, ' + queued + ' queued (limit '
+                    + maximumConcurrentGenerations + ').';
+            }
+
+            function enqueueGeneration(collectionId, button, status) {
+                if (generationJobs[collectionId]) { return; }
+                if (activeGenerationCount === 0 && generationQueue.length === 0) {
+                    generationBatchSucceeded = 0;
+                    generationBatchFailed = 0;
+                }
+
+                var job = {
+                    collectionId: collectionId,
+                    button: button,
+                    status: status,
+                    state: 'queued',
+                    message: 'Waiting to generate.',
+                    kind: ''
+                };
+                generationJobs[collectionId] = job;
+                generationQueue.push(job);
+                updateGenerationJobVisual(job);
+                updateGenerationQueueStatus();
+                processGenerationQueue();
+            }
+
+            function processGenerationQueue() {
+                while (activeGenerationCount < maximumConcurrentGenerations && generationQueue.length > 0) {
+                    runGenerationJob(generationQueue.shift());
+                }
+                updateGenerationQueueStatus();
+            }
+
+            function runGenerationJob(job) {
+                activeGenerationCount += 1;
+                job.state = 'running';
+                job.message = 'Generating proposal…';
+                updateGenerationJobVisual(job);
+                updateGenerationQueueStatus();
+
+                api('Collections/' + job.collectionId + '/Generate', { type: 'POST', data: '{}' })
                     .then(function () {
+                        generationBatchSucceeded += 1;
+                        job.state = 'complete';
+                        job.message = 'Proposal ready for review.';
+                        job.kind = 'success';
                         return loadPendingReviewCount();
                     })
-                    .then(function () {
-                        if (openReviewAfterGeneration) {
-                            showPanel('reviewsPanel');
-                        }
-                        message('Proposal generated and ready for review.', 'success');
+                    .catch(function (error) {
+                        generationBatchFailed += 1;
+                        job.state = 'failed';
+                        job.message = errorText(error);
+                        job.kind = 'error';
                     })
-                    .catch(function (error) { message(errorText(error), 'error'); })
-                    .finally(function () { setBusy(button, false); });
+                    .finally(function () {
+                        activeGenerationCount -= 1;
+                        delete generationJobs[job.collectionId];
+                        updateGenerationJobVisual(job);
+                        processGenerationQueue();
+                        finishGenerationBatchIfIdle();
+                    });
+            }
+
+            function finishGenerationBatchIfIdle() {
+                if (activeGenerationCount > 0 || generationQueue.length > 0) { return; }
+                updateGenerationQueueStatus();
+                var summary = generationBatchSucceeded + ' proposal(s) generated';
+                if (generationBatchFailed > 0) {
+                    summary += '; ' + generationBatchFailed + ' failed';
+                }
+                summary += '.';
+                if (openReviewAfterGeneration && generationBatchSucceeded > 0) {
+                    showPanel('reviewsPanel');
+                }
+                message(summary, generationBatchFailed > 0 ? 'error' : 'success');
             }
 
             function updatePendingReviewCount(count) {
@@ -595,6 +699,9 @@
                 setChecked('generateContentRating', config.generateContentRating);
                 openReviewAfterGeneration = Boolean(config.openReviewAfterGeneration);
                 setChecked('openReviewAfterGeneration', openReviewAfterGeneration);
+                maximumConcurrentGenerations = Math.max(1, Math.min(5, Number(config.maximumConcurrentGenerations) || 2));
+                setValue('maximumConcurrentGenerations', maximumConcurrentGenerations);
+                processGenerationQueue();
                 setValue('overviewUpdateMode', enumValue(config.overviewUpdateMode, ['replace', 'onlyifempty']));
                 setValue('genreUpdateMode', enumValue(config.genreUpdateMode, ['merge', 'replace', 'onlyifempty']));
                 setValue('tagUpdateMode', enumValue(config.tagUpdateMode, ['merge', 'replace', 'onlyifempty']));
@@ -639,6 +746,7 @@
                         generateSortTitle: checked('generateSortTitle'),
                         generateContentRating: checked('generateContentRating'),
                         openReviewAfterGeneration: checked('openReviewAfterGeneration'),
+                        maximumConcurrentGenerations: numberValue('maximumConcurrentGenerations'),
                         overviewUpdateMode: numberValue('overviewUpdateMode'),
                         genreUpdateMode: numberValue('genreUpdateMode'),
                         tagUpdateMode: numberValue('tagUpdateMode'),

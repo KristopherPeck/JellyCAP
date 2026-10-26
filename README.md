@@ -14,6 +14,7 @@ The initial release targets Jellyfin 12.3 and .NET 10.
 - Presents current and proposed values side by side and allows edits before approval.
 - Shows the current pending-review count on the JellyAnnotator dashboard.
 - Paginates collections 50 at a time and pending reviews 25 at a time.
+- Queues generation requests from multiple collections, disables each queued/running collection button, and runs up to a configurable number concurrently.
 - Stays on the collection list after generation by default, with an option to open Pending reviews automatically.
 - Prunes approved and rejected proposal history using configurable age and count limits while preserving every pending proposal.
 - Writes handled provider, storage, configuration, and review failures through Jellyfin's logging system.
@@ -49,6 +50,8 @@ Stored keys are plaintext server-side secrets, like many Jellyfin plugin credent
 5. Select the fields to apply, then approve or reject the proposal.
 
 The pending-review badge updates after generation, approval, rejection, and review refresh. Enable **Open Pending reviews after generating a proposal** in Settings if you prefer the dashboard to switch to the new proposal automatically.
+
+The dashboard runs two collection generations concurrently by default, configurable from 1 through 5. Additional selections remain queued and display their state on the collection card. Automatic navigation to Pending reviews waits until the current browser-session queue finishes.
 
 Completed proposal retention applies to approved and rejected proposals as one combined history. The defaults retain completed proposals for 7 days, capped at the newest 100 records. Setting either completed-history limit to 0 removes completed proposals immediately. Pending proposals are never removed by retention.
 

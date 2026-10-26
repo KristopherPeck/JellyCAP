@@ -60,6 +60,12 @@ public sealed class PluginConfiguration : BasePluginConfiguration
     public bool OpenReviewAfterGeneration { get; set; }
 
     /// <summary>
+    /// Gets or sets the maximum number of collection proposals generated concurrently per dashboard session.
+    /// Additional requests remain queued in that dashboard session.
+    /// </summary>
+    public int MaximumConcurrentGenerations { get; set; } = 2;
+
+    /// <summary>
     /// Gets or sets the overview replacement policy.
     /// </summary>
     public OverviewUpdateMode OverviewUpdateMode { get; set; } = OverviewUpdateMode.Replace;
@@ -165,6 +171,7 @@ public sealed class PluginConfiguration : BasePluginConfiguration
             GenerateSortTitle = GenerateSortTitle,
             GenerateContentRating = GenerateContentRating,
             OpenReviewAfterGeneration = OpenReviewAfterGeneration,
+            MaximumConcurrentGenerations = MaximumConcurrentGenerations,
             OverviewUpdateMode = OverviewUpdateMode,
             GenreUpdateMode = GenreUpdateMode,
             TagUpdateMode = TagUpdateMode,
