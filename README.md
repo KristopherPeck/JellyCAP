@@ -16,6 +16,7 @@ The initial release targets Jellyfin 12.3 and .NET 10.
 - Shows the current pending-review count on the JellyCAP dashboard.
 - Paginates collections 50 at a time and pending reviews 25 at a time.
 - Durably queues generation requests from individual collections or every collection matching the current search and activity filter, then runs up to a configurable number concurrently even when the dashboard is closed.
+- Cancels individual or all queued jobs before they start, retries failed collections, and skips collections with pending reviews during Queue All by default.
 - Tracks each collection's successful generation count, last attempt, last success, last application, current queue state, pending-review state, and most recent failure independently of proposal retention.
 - Stays on the collection list after generation by default, with an option to open Pending reviews automatically.
 - Prunes approved and rejected proposal history using configurable age and count limits while preserving every pending proposal.
@@ -61,6 +62,8 @@ The pending-review badge updates after generation, approval, rejection, and revi
 The Jellyfin server runs two collection generations concurrently by default, configurable from 1 through 5. Additional selections are stored in SQLite and display their state on the collection card. Queue all collections confirms the complete filtered batch size and respects both the current text search and activity filter. Closing or reloading the dashboard does not stop queued work. A Jellyfin restart returns interrupted running jobs to the queue. Automatic navigation to Pending reviews occurs only when the dashboard session that submitted work remains open and the server queue finishes.
 
 Queued jobs use the current saved generation settings and credential when a worker starts them; credentials are never copied into the job table. Changing settings therefore affects jobs that have not started yet.
+
+Queued collection cards can be cancelled individually, and **Cancel all queued** removes every job that has not started. Running provider requests continue. Failed cards expose **Retry generation**, which creates a new job without resetting the collection's successful-generation history. Queue All skips collections with pending reviews by default; clear that option when intentionally generating another proposal for them.
 
 Collection activity filters include all, never generated, generated previously, queued, generating, last attempt failed, applied previously, and pending review. Successful generation totals and timestamps are retained after approved or rejected proposal records expire. When upgrading the database, retained proposals seed the initial totals; generations already removed by an older retention policy cannot be reconstructed.
 

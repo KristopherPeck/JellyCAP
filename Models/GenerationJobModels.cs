@@ -61,6 +61,18 @@ public sealed class GenerationEnqueueResult
 
     /// <summary>Gets or sets the number already queued or running.</summary>
     public int AlreadyActiveCount { get; set; }
+
+    /// <summary>Gets or sets the number excluded because they already have pending reviews.</summary>
+    public int SkippedPendingReviewCount { get; set; }
+}
+
+/// <summary>
+/// Result of cancelling one or more queued generation jobs.
+/// </summary>
+public sealed class GenerationCancellationResult
+{
+    /// <summary>Gets or sets the number of queued jobs cancelled.</summary>
+    public int CancelledCount { get; set; }
 }
 
 /// <summary>

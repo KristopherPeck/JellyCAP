@@ -323,6 +323,43 @@ public sealed class ProposalStore
     }
 
     /// <summary>
+    /// Cancels queued jobs before a worker starts them.
+    /// </summary>
+    /// <param name="collectionId">Optional collection to cancel; null cancels every queued job.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of jobs removed from the queue.</returns>
+    public async Task<int> CancelQueuedGenerationJobsAsync(
+        Guid? collectionId,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var connection = await OpenConnectionUnsafeAsync(cancellationToken).ConfigureAwait(false);
+            await using var command = connection.CreateCommand();
+            command.CommandText = collectionId.HasValue
+                ? "DELETE FROM generation_jobs WHERE status = $queued AND collection_id = $collectionId;"
+                : "DELETE FROM generation_jobs WHERE status = $queued;";
+            command.Parameters.AddWithValue("$queued", (int)GenerationJobStatus.Queued);
+            if (collectionId.HasValue)
+            {
+                command.Parameters.AddWithValue("$collectionId", FormatGuid(collectionId.Value));
+            }
+
+            return await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogStorageFailure(exception, "cancel queued generation jobs");
+            throw;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
     /// Atomically claims the oldest queued job when the configured concurrency allows it.
     /// </summary>
     public async Task<GenerationJob?> ClaimGenerationJobAsync(

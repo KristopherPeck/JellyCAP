@@ -254,13 +254,18 @@ public sealed class JellyCAPController : ControllerBase
     public async Task<ActionResult<GenerationEnqueueResult>> QueueCollections(
         CancellationToken cancellationToken,
         [FromQuery] string? search = null,
-        [FromQuery] CollectionTrackingFilter trackingFilter = CollectionTrackingFilter.All)
+        [FromQuery] CollectionTrackingFilter trackingFilter = CollectionTrackingFilter.All,
+        [FromQuery] bool skipPendingReviews = true)
     {
         try
         {
             var activity = await _proposalStore.GetCollectionActivityAsync(cancellationToken).ConfigureAwait(false);
             var collectionIds = _collectionContextService.ListCollectionIds(search, trackingFilter, activity);
-            var result = await _generationQueueService.EnqueueAsync(collectionIds, cancellationToken).ConfigureAwait(false);
+            var eligibleIds = skipPendingReviews
+                ? collectionIds.Where(collectionId => activity.GetValueOrDefault(collectionId)?.HasPendingReview != true).ToArray()
+                : collectionIds;
+            var result = await _generationQueueService.EnqueueAsync(eligibleIds, cancellationToken).ConfigureAwait(false);
+            result.SkippedPendingReviewCount = collectionIds.Length - eligibleIds.Length;
             return Accepted(result);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
@@ -270,6 +275,34 @@ public sealed class JellyCAPController : ControllerBase
                 StatusCodes.Status500InternalServerError,
                 new ProblemDetails { Title = "Collections could not be queued", Detail = exception.Message });
         }
+    }
+
+    /// <summary>
+    /// Cancels a queued generation job for one collection if a worker has not started it.
+    /// </summary>
+    [HttpPost("Collections/{collectionId:guid}/GenerationQueue/Cancel")]
+    [ProducesResponseType<GenerationCancellationResult>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<GenerationCancellationResult>> CancelQueuedCollection(
+        Guid collectionId,
+        CancellationToken cancellationToken)
+    {
+        var cancelled = await _proposalStore.CancelQueuedGenerationJobsAsync(
+            collectionId,
+            cancellationToken).ConfigureAwait(false);
+        return Ok(new GenerationCancellationResult { CancelledCount = cancelled });
+    }
+
+    /// <summary>
+    /// Cancels every queued generation job without interrupting running provider requests.
+    /// </summary>
+    [HttpPost("GenerationQueue/CancelQueued")]
+    [ProducesResponseType<GenerationCancellationResult>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<GenerationCancellationResult>> CancelAllQueued(CancellationToken cancellationToken)
+    {
+        var cancelled = await _proposalStore.CancelQueuedGenerationJobsAsync(
+            null,
+            cancellationToken).ConfigureAwait(false);
+        return Ok(new GenerationCancellationResult { CancelledCount = cancelled });
     }
 
     /// <summary>

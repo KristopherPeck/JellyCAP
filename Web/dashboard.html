@@ -18,9 +18,10 @@
         .ja-panel[hidden] { display: none; }
         .ja-toolbar { display: flex; flex-wrap: wrap; gap: .75em; align-items: flex-end; margin-bottom: 1em; }
         .ja-toolbar .inputContainer { flex: 1 1 18em; margin-bottom: 0; }
-        #collectionSearch, #collectionTrackingFilter, #refreshCollections, #queueAllCollections { height: 2.75em; min-height: 2.75em; box-sizing: border-box; }
-        #refreshCollections, #queueAllCollections { margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
+        #collectionSearch, #collectionTrackingFilter, #refreshCollections, #queueAllCollections, #cancelAllQueued { height: 2.75em; min-height: 2.75em; box-sizing: border-box; }
+        #refreshCollections, #queueAllCollections, #cancelAllQueued { margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
         .ja-tracking-filter { flex: 0 1 16em; margin-bottom: 0; }
+        .ja-queue-options { display: flex; flex-wrap: wrap; align-items: center; gap: 1em; margin: -.25em 0 1em; }
         .ja-pager { display: flex; align-items: center; justify-content: center; gap: .75em; margin: 1.25em 0; }
         .ja-page-info { min-width: 12em; text-align: center; }
         .ja-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); gap: 1em; }
@@ -88,6 +89,10 @@
                     </div>
                     <button is="emby-button" type="button" class="raised button-submit" id="refreshCollections">Refresh</button>
                     <button is="emby-button" type="button" class="raised" id="queueAllCollections">Queue all collections</button>
+                    <button is="emby-button" type="button" class="raised" id="cancelAllQueued" disabled>Cancel all queued</button>
+                </div>
+                <div class="ja-queue-options">
+                    <label class="emby-checkbox-label"><input is="emby-checkbox" id="skipPendingReviews" type="checkbox" checked><span>Skip collections with pending reviews when queuing all</span></label>
                 </div>
                 <div id="generationQueueStatus" class="ja-message ja-muted" role="status" aria-live="polite"></div>
                 <div id="collectionsList" class="ja-grid"></div>
@@ -302,6 +307,7 @@
             var reviewPageSize = 25;
             var maximumConcurrentGenerations = 2;
             var collectionTotalCount = 0;
+            var queuedGenerationCount = 0;
             var queueAllLoading = false;
             var generationQueuePollTimer = null;
             var previousActiveJobCount = 0;
@@ -473,7 +479,16 @@
                         generate.addEventListener('click', function () {
                             enqueueGeneration(collection.id, generate, generationStatus);
                         });
+                        var cancel = element('button', 'raised', 'Cancel');
+                        cancel.setAttribute('is', 'emby-button');
+                        cancel.setAttribute('data-cancel-generation-collection-id', collection.id);
+                        cancel.type = 'button';
+                        cancel.hidden = true;
+                        cancel.addEventListener('click', function () {
+                            cancelQueuedGeneration(collection.id, cancel, generationStatus);
+                        });
                         actions.appendChild(generate);
+                        actions.appendChild(cancel);
                         actions.appendChild(generationStatus);
                         card.appendChild(actions);
                         list.appendChild(card);
@@ -539,8 +554,9 @@
                 failure.hidden = !showFailure;
 
                 var button = card.querySelector('[data-generation-collection-id]');
+                var cancelButton = card.querySelector('[data-cancel-generation-collection-id]');
                 var generationStatus = button ? button.parentNode.querySelector('.ja-message') : null;
-                if (!button || !generationStatus) { return; }
+                if (!button || !cancelButton || !generationStatus) { return; }
                 var wasActive = button.textContent === 'Queuing…'
                     || button.textContent === 'Queued…'
                     || button.textContent === 'Generating…';
@@ -553,17 +569,26 @@
                         ? 'The server is generating this proposal.'
                         : 'Waiting in the server queue.';
                     generationStatus.className = 'ja-message';
-                } else if (wasActive) {
+                    cancelButton.hidden = status !== 'queued';
+                    cancelButton.disabled = false;
+                    cancelButton.textContent = 'Cancel';
+                    delete cancelButton.dataset.originalLabel;
+                } else if (button.textContent !== 'Queuing…') {
                     button.disabled = false;
                     button.setAttribute('aria-disabled', 'false');
                     button.setAttribute('aria-busy', 'false');
-                    button.textContent = 'Generate proposal';
+                    button.textContent = activity.lastGenerationSucceeded === false
+                        ? 'Retry generation'
+                        : 'Generate proposal';
                     delete button.dataset.originalLabel;
-                    generationStatus.textContent = activity.lastGenerationSucceeded === false
-                        ? 'Generation failed.'
-                        : (activity.hasPendingReview ? 'Proposal ready for review.' : '');
-                    generationStatus.className = 'ja-message'
-                        + (activity.lastGenerationSucceeded === false ? ' error' : ' success');
+                    cancelButton.hidden = true;
+                    if (wasActive) {
+                        generationStatus.textContent = activity.lastGenerationSucceeded === false
+                            ? 'Generation failed. You can retry it.'
+                            : (activity.hasPendingReview ? 'Proposal ready for review.' : '');
+                        generationStatus.className = 'ja-message'
+                            + (activity.lastGenerationSucceeded === false ? ' error' : ' success');
+                    }
                 }
             }
 
@@ -592,6 +617,16 @@
                 button.textContent = queueAllLoading ? 'Queuing collections…' : 'Queue all matching filter';
             }
 
+            function updateCancelAllQueuedButton() {
+                var button = byId('cancelAllQueued');
+                var disabled = queuedGenerationCount <= 0;
+                button.disabled = disabled;
+                button.setAttribute('aria-disabled', String(disabled));
+                button.textContent = disabled
+                    ? 'Cancel all queued'
+                    : 'Cancel all queued (' + queuedGenerationCount + ')';
+            }
+
             function queueAllCollections() {
                 if (queueAllLoading || collectionTotalCount === 0) { return; }
                 var search = value('collectionSearch').trim();
@@ -599,13 +634,16 @@
                 if (!window.confirm(
                     'Queue ' + collectionTotalCount + ' collection(s) matching the current search and activity filter?'
                     + ' Jobs continue on the Jellyfin server if this dashboard is closed.'
-                    + ' Collections with pending reviews can receive another proposal.')) {
+                    + (checked('skipPendingReviews')
+                        ? ' Collections with pending reviews will be skipped.'
+                        : ' Collections with pending reviews can receive another proposal.'))) {
                     return;
                 }
 
                 queueAllLoading = true;
                 updateQueueAllButton();
                 var path = 'Collections/Queue?trackingFilter=' + encodeURIComponent(trackingFilter)
+                    + '&skipPendingReviews=' + encodeURIComponent(String(checked('skipPendingReviews')))
                     + (search ? '&search=' + encodeURIComponent(search) : '');
                 api(path, { type: 'POST', data: '{}' })
                     .then(function (result) {
@@ -613,6 +651,9 @@
                         var summary = result.queuedCount + ' collection(s) added to the server queue.';
                         if (result.alreadyActiveCount > 0) {
                             summary += ' ' + result.alreadyActiveCount + ' already queued or running.';
+                        }
+                        if (result.skippedPendingReviewCount > 0) {
+                            summary += ' ' + result.skippedPendingReviewCount + ' skipped because a review is pending.';
                         }
                         message(summary, 'success');
                         return refreshGenerationState();
@@ -643,6 +684,43 @@
                     });
             }
 
+            function cancelQueuedGeneration(collectionId, button, status) {
+                setBusy(button, true, 'Cancelling…');
+                api('Collections/' + collectionId + '/GenerationQueue/Cancel', { type: 'POST', data: '{}' })
+                    .then(function (result) {
+                        return refreshGenerationState().then(function () {
+                            status.textContent = result.cancelledCount > 0
+                                ? 'Queued generation cancelled.'
+                                : 'This job already started and can no longer be cancelled.';
+                            status.className = 'ja-message' + (result.cancelledCount > 0 ? ' success' : ' error');
+                        });
+                    })
+                    .catch(function (error) {
+                        status.textContent = errorText(error);
+                        status.className = 'ja-message error';
+                        setBusy(button, false);
+                    });
+            }
+
+            function cancelAllQueued() {
+                if (queuedGenerationCount <= 0
+                    || !window.confirm('Cancel all ' + queuedGenerationCount + ' queued generation job(s)? Running jobs will continue.')) {
+                    return;
+                }
+                var button = byId('cancelAllQueued');
+                setBusy(button, true, 'Cancelling…');
+                api('GenerationQueue/CancelQueued', { type: 'POST', data: '{}' })
+                    .then(function (result) {
+                        message(result.cancelledCount + ' queued generation job(s) cancelled.', 'success');
+                        return refreshGenerationState();
+                    })
+                    .catch(function (error) { message(errorText(error), 'error'); })
+                    .finally(function () {
+                        setBusy(button, false);
+                        updateCancelAllQueuedButton();
+                    });
+            }
+
             function refreshGenerationState() {
                 return Promise.all([loadGenerationQueueStatus(), refreshVisibleCollectionActivity(), loadPendingReviewCount()]);
             }
@@ -656,6 +734,8 @@
                     .then(function (result) {
                         var queued = Number(result.queuedCount) || 0;
                         var running = Number(result.runningCount) || 0;
+                        queuedGenerationCount = queued;
+                        updateCancelAllQueuedButton();
                         var active = queued + running;
                         var target = byId('generationQueueStatus');
                         target.textContent = active === 0
@@ -1017,6 +1097,7 @@
                 });
                 byId('refreshCollections').addEventListener('click', function () { loadCollections(false); });
                 byId('queueAllCollections').addEventListener('click', queueAllCollections);
+                byId('cancelAllQueued').addEventListener('click', cancelAllQueued);
                 byId('collectionTrackingFilter').addEventListener('change', function () { loadCollections(true); });
                 byId('collectionSearch').addEventListener('keydown', function (event) {
                     if (event.key === 'Enter') { event.preventDefault(); loadCollections(true); }
