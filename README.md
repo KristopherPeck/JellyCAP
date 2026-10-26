@@ -19,6 +19,7 @@ The initial release targets Jellyfin 12.3 and .NET 10.
 - Stays on the collection list after generation by default, with an option to open Pending reviews automatically.
 - Prunes approved and rejected proposal history using configurable age and count limits while preserving every pending proposal.
 - Writes handled provider, storage, configuration, and review failures through Jellyfin's logging system.
+- Enforces English-script output when English is selected, while preserving non-Latin official titles and names copied from the supplied metadata.
 - Detects metadata changed after generation and asks before overwriting it.
 - Retains rejected and applied proposal history according to the configured policy without sending provider credentials to the browser.
 - Stores proposals in a plugin-owned SQLite database with indexed status and timestamp fields.

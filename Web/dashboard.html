@@ -24,6 +24,8 @@
         .ja-page-info { min-width: 12em; text-align: center; }
         .ja-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); gap: 1em; }
         .ja-card { border: 1px solid rgba(255,255,255,.16); border-radius: .4em; padding: 1em; background: rgba(255,255,255,.04); }
+        .ja-collection-card { display: flex; flex-direction: column; }
+        .ja-collection-card .ja-generation-actions { margin-top: auto; padding-top: 1em; }
         .ja-card h3 { margin-top: 0; }
         .ja-muted { opacity: .72; }
         .ja-meta { font-size: .92em; overflow-wrap: anywhere; }
@@ -31,6 +33,9 @@
         .ja-meta dd { margin-left: 0; white-space: pre-wrap; }
         .ja-actions { display: flex; flex-wrap: wrap; gap: .6em; margin-top: 1em; }
         .ja-actions .ja-message { align-self: center; margin: 0 0 0 .35em; }
+        .ja-generation-actions { flex-wrap: nowrap; align-items: center; }
+        .ja-generation-actions > button { flex: 0 0 auto; }
+        .ja-generation-actions .ja-message { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
         .ja-message { min-height: 1.5em; margin: .75em 0; }
         .ja-message.error { color: #ff8a80; }
         .ja-message.success { color: #69f0ae; }
@@ -413,7 +418,7 @@
                         return;
                     }
                     collections.forEach(function (collection) {
-                        var card = element('article', 'ja-card');
+                        var card = element('article', 'ja-card ja-collection-card');
                         card.appendChild(element('h3', '', collection.name));
                         card.appendChild(element('p', 'ja-muted', collection.linkedItemCount + ' directly linked item(s)'));
                         var metadata = element('dl', 'ja-meta');
@@ -424,7 +429,7 @@
                         addMetadata(metadata, 'Genres', (collection.genres || []).join(', '));
                         addMetadata(metadata, 'Tags', (collection.tags || []).join(', '));
                         card.appendChild(metadata);
-                        var actions = element('div', 'ja-actions');
+                        var actions = element('div', 'ja-actions ja-generation-actions');
                         var generate = element('button', 'raised button-submit', 'Generate proposal');
                         generate.setAttribute('is', 'emby-button');
                         generate.type = 'button';
