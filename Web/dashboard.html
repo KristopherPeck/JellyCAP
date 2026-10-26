@@ -3,10 +3,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>JellyAnnotator</title>
+    <title>JellyCAP</title>
 </head>
 <body>
-<div id="JellyAnnotatorPage"
+<div id="JellyCAPPage"
      data-role="page"
      class="page type-interior pluginConfigurationPage"
      data-require="emby-button,emby-checkbox,emby-input,emby-select">
@@ -43,10 +43,10 @@
 
     <div data-role="content">
         <div class="content-primary ja-page">
-            <h1>JellyAnnotator</h1>
+            <h1>JellyCAP</h1>
             <p class="ja-muted">Generate reviewable collection metadata from the collection's own contents. TV context stays at show level; seasons and episodes are excluded.</p>
 
-            <div class="ja-tabs" role="tablist" aria-label="JellyAnnotator sections">
+            <div class="ja-tabs" role="tablist" aria-label="JellyCAP sections">
                 <button is="emby-button" type="button" class="raised ja-tab" data-panel="collectionsPanel" aria-selected="true">Collections</button>
                 <button is="emby-button" type="button" class="raised ja-tab" data-panel="reviewsPanel" aria-selected="false">Pending reviews <span id="pendingReviewCount" class="ja-count" aria-label="0 pending reviews">0</span></button>
                 <button is="emby-button" type="button" class="raised ja-tab" data-panel="settingsPanel" aria-selected="false">Settings</button>
@@ -229,7 +229,7 @@
     <script>
         (function () {
             'use strict';
-            var page = document.getElementById('JellyAnnotatorPage');
+            var page = document.getElementById('JellyCAPPage');
             var loaded = false;
             var openReviewAfterGeneration = false;
             var collectionStartIndex = 0;
@@ -245,7 +245,7 @@
 
             function api(path, options) {
                 var request = options || {};
-                request.url = ApiClient.getUrl('JellyAnnotator/' + path);
+                request.url = ApiClient.getUrl('JellyCAP/' + path);
                 request.type = request.type || 'GET';
                 request.dataType = 'json';
                 if (request.data) {

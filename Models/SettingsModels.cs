@@ -1,6 +1,6 @@
-using Jellyfin.Plugin.JellyAnnotator.Configuration;
+using Jellyfin.Plugin.JellyCAP.Configuration;
 
-namespace Jellyfin.Plugin.JellyAnnotator.Models;
+namespace Jellyfin.Plugin.JellyCAP.Models;
 
 /// <summary>
 /// Settings returned to the administration page.

@@ -1,4 +1,4 @@
-namespace Jellyfin.Plugin.JellyAnnotator.Configuration;
+namespace Jellyfin.Plugin.JellyCAP.Configuration;
 
 /// <summary>
 /// Determines when a generated overview is proposed.

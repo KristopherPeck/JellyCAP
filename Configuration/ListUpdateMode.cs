@@ -1,4 +1,4 @@
-namespace Jellyfin.Plugin.JellyAnnotator.Configuration;
+namespace Jellyfin.Plugin.JellyCAP.Configuration;
 
 /// <summary>
 /// Determines how generated list metadata is combined with existing values.

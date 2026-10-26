@@ -1,6 +1,6 @@
-using Jellyfin.Plugin.JellyAnnotator.Configuration;
+using Jellyfin.Plugin.JellyCAP.Configuration;
 
-namespace Jellyfin.Plugin.JellyAnnotator.Services;
+namespace Jellyfin.Plugin.JellyCAP.Services;
 
 /// <summary>
 /// Validates and normalizes plugin settings before use.

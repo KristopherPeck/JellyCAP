@@ -1,12 +1,12 @@
 using System.Security.Cryptography;
 using System.Text;
-using Jellyfin.Plugin.JellyAnnotator.Models;
+using Jellyfin.Plugin.JellyCAP.Models;
 using MediaBrowser.Controller.Entities;
 
-namespace Jellyfin.Plugin.JellyAnnotator.Services;
+namespace Jellyfin.Plugin.JellyCAP.Services;
 
 /// <summary>
-/// Produces stable fingerprints for the metadata fields managed by JellyAnnotator.
+/// Produces stable fingerprints for the metadata fields managed by JellyCAP.
 /// </summary>
 internal static class MetadataFingerprint
 {

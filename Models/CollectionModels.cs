@@ -1,4 +1,4 @@
-namespace Jellyfin.Plugin.JellyAnnotator.Models;
+namespace Jellyfin.Plugin.JellyCAP.Models;
 
 /// <summary>
 /// A collection displayed in the workbench.

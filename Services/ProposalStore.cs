@@ -1,9 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Jellyfin.Plugin.JellyAnnotator.Models;
+using Jellyfin.Plugin.JellyCAP.Models;
 using Microsoft.Extensions.Logging;
 
-namespace Jellyfin.Plugin.JellyAnnotator.Services;
+namespace Jellyfin.Plugin.JellyCAP.Services;
 
 /// <summary>
 /// Persists generated proposals and their review history in the plugin data folder.
@@ -154,7 +154,7 @@ public sealed class ProposalStore
             if (removed > 0)
             {
                 await WriteUnsafeAsync(document, cancellationToken).ConfigureAwait(false);
-                _logger.LogInformation("Removed {ProposalCount} completed JellyAnnotator proposals according to retention settings.", removed);
+                _logger.LogInformation("Removed {ProposalCount} completed JellyCAP proposals according to retention settings.", removed);
             }
 
             return removed;
@@ -167,13 +167,8 @@ public sealed class ProposalStore
 
     private static string GetStorePath()
     {
-        var dataFolder = Plugin.Instance?.DataFolderPath;
-        if (string.IsNullOrWhiteSpace(dataFolder))
-        {
-            throw new InvalidOperationException("The JellyAnnotator data folder is not available.");
-        }
-
-        return Path.Combine(dataFolder, "proposals.json");
+        return Plugin.Instance?.GetDataFilePath("proposals.json")
+            ?? throw new InvalidOperationException("The JellyCAP data folder is not available.");
     }
 
     private async Task<ProposalDocument> ReadAndPruneUnsafeAsync(CancellationToken cancellationToken)
@@ -183,7 +178,7 @@ public sealed class ProposalStore
         if (removed > 0)
         {
             await WriteUnsafeAsync(document, cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("Removed {ProposalCount} completed JellyAnnotator proposals according to retention settings.", removed);
+            _logger.LogInformation("Removed {ProposalCount} completed JellyCAP proposals according to retention settings.", removed);
         }
 
         return document;
@@ -222,7 +217,7 @@ public sealed class ProposalStore
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "Failed to read the JellyAnnotator proposal store at {ProposalStorePath}.", path);
+            _logger.LogError(exception, "Failed to read the JellyCAP proposal store at {ProposalStorePath}.", path);
             throw;
         }
     }
@@ -240,7 +235,7 @@ public sealed class ProposalStore
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "Failed to write the JellyAnnotator proposal store at {ProposalStorePath}.", path);
+            _logger.LogError(exception, "Failed to write the JellyCAP proposal store at {ProposalStorePath}.", path);
             throw;
         }
         finally

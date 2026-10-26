@@ -1,7 +1,7 @@
-using Jellyfin.Plugin.JellyAnnotator.Configuration;
-using Jellyfin.Plugin.JellyAnnotator.Models;
+using Jellyfin.Plugin.JellyCAP.Configuration;
+using Jellyfin.Plugin.JellyCAP.Models;
 
-namespace Jellyfin.Plugin.JellyAnnotator.Services;
+namespace Jellyfin.Plugin.JellyCAP.Services;
 
 /// <summary>
 /// Orchestrates context collection, provider generation, and review proposal creation.
@@ -38,7 +38,7 @@ public sealed class ProposalService
     {
         var configuration = SettingsValidator.Validate(
             Plugin.Instance?.Configuration
-            ?? throw new InvalidOperationException("JellyAnnotator is not initialized."));
+            ?? throw new InvalidOperationException("JellyCAP is not initialized."));
         var (apiKey, _) = await _secretStore.ResolveAsync(
             configuration.ApiKeyEnvironmentVariable,
             cancellationToken).ConfigureAwait(false);
@@ -80,7 +80,7 @@ public sealed class ProposalService
     {
         var configuration = SettingsValidator.Validate(
             Plugin.Instance?.Configuration
-            ?? throw new InvalidOperationException("JellyAnnotator is not initialized."));
+            ?? throw new InvalidOperationException("JellyCAP is not initialized."));
         configuration = configuration.Copy();
         configuration.GenerateOverview = true;
         configuration.GenerateGenres = false;

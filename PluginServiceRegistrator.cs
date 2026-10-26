@@ -1,12 +1,12 @@
-using Jellyfin.Plugin.JellyAnnotator.Services;
+using Jellyfin.Plugin.JellyCAP.Services;
 using MediaBrowser.Controller;
 using MediaBrowser.Controller.Plugins;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Jellyfin.Plugin.JellyAnnotator;
+namespace Jellyfin.Plugin.JellyCAP;
 
 /// <summary>
-/// Registers JellyAnnotator services in Jellyfin's dependency injection container.
+/// Registers JellyCAP services in Jellyfin's dependency injection container.
 /// </summary>
 public sealed class PluginServiceRegistrator : IPluginServiceRegistrator
 {

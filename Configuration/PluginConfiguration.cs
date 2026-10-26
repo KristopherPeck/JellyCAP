@@ -1,9 +1,9 @@
 using MediaBrowser.Model.Plugins;
 
-namespace Jellyfin.Plugin.JellyAnnotator.Configuration;
+namespace Jellyfin.Plugin.JellyCAP.Configuration;
 
 /// <summary>
-/// Non-secret JellyAnnotator configuration. Provider credentials are stored separately and are
+/// Non-secret JellyCAP configuration. Provider credentials are stored separately and are
 /// never returned through Jellyfin's standard plugin configuration endpoint.
 /// </summary>
 public sealed class PluginConfiguration : BasePluginConfiguration

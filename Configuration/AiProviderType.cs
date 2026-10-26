@@ -1,7 +1,7 @@
-namespace Jellyfin.Plugin.JellyAnnotator.Configuration;
+namespace Jellyfin.Plugin.JellyCAP.Configuration;
 
 /// <summary>
-/// AI provider protocols supported by JellyAnnotator.
+/// AI provider protocols supported by JellyCAP.
 /// </summary>
 public enum AiProviderType
 {

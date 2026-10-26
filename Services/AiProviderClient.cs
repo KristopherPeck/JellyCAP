@@ -2,10 +2,10 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
-using Jellyfin.Plugin.JellyAnnotator.Configuration;
-using Jellyfin.Plugin.JellyAnnotator.Models;
+using Jellyfin.Plugin.JellyCAP.Configuration;
+using Jellyfin.Plugin.JellyCAP.Models;
 
-namespace Jellyfin.Plugin.JellyAnnotator.Services;
+namespace Jellyfin.Plugin.JellyCAP.Services;
 
 /// <summary>
 /// Calls supported AI provider protocols without exposing credentials to the browser.

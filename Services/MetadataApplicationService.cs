@@ -1,7 +1,7 @@
-using Jellyfin.Plugin.JellyAnnotator.Models;
+using Jellyfin.Plugin.JellyCAP.Models;
 using MediaBrowser.Controller.Library;
 
-namespace Jellyfin.Plugin.JellyAnnotator.Services;
+namespace Jellyfin.Plugin.JellyCAP.Services;
 
 /// <summary>
 /// Applies approved proposal fields to Jellyfin collection metadata.
@@ -57,7 +57,7 @@ public sealed class MetadataApplicationService
 
         var configuration = SettingsValidator.Validate(
             Plugin.Instance?.Configuration
-            ?? throw new InvalidOperationException("JellyAnnotator is not initialized."));
+            ?? throw new InvalidOperationException("JellyCAP is not initialized."));
 
         if (request.ApplySortTitle)
         {

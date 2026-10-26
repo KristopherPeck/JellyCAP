@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace Jellyfin.Plugin.JellyAnnotator.Services;
+namespace Jellyfin.Plugin.JellyCAP.Services;
 
 /// <summary>
 /// Persists provider credentials outside Jellyfin's publicly readable plugin configuration model.
@@ -104,13 +104,8 @@ public sealed class SecretStore
 
     private static string GetSecretPath()
     {
-        var dataFolder = Plugin.Instance?.DataFolderPath;
-        if (string.IsNullOrWhiteSpace(dataFolder))
-        {
-            throw new InvalidOperationException("The JellyAnnotator data folder is not available.");
-        }
-
-        return Path.Combine(dataFolder, "secrets.json");
+        return Plugin.Instance?.GetDataFilePath("secrets.json")
+            ?? throw new InvalidOperationException("The JellyCAP data folder is not available.");
     }
 
     private static async Task WriteAtomicallyAsync(

@@ -1,37 +1,37 @@
-using Jellyfin.Plugin.JellyAnnotator.Models;
-using Jellyfin.Plugin.JellyAnnotator.Services;
+using Jellyfin.Plugin.JellyCAP.Models;
+using Jellyfin.Plugin.JellyCAP.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 
-namespace Jellyfin.Plugin.JellyAnnotator.Controllers;
+namespace Jellyfin.Plugin.JellyCAP.Controllers;
 
 /// <summary>
-/// Administrative API used by the embedded JellyAnnotator workbench.
+/// Administrative API used by the embedded JellyCAP workbench.
 /// </summary>
 [ApiController]
 [Authorize(Policy = "RequiresElevation")]
-[Route("JellyAnnotator")]
-public sealed class JellyAnnotatorController : ControllerBase
+[Route("JellyCAP")]
+public sealed class JellyCAPController : ControllerBase
 {
     private readonly CollectionContextService _collectionContextService;
     private readonly MetadataApplicationService _metadataApplicationService;
     private readonly ProposalService _proposalService;
     private readonly ProposalStore _proposalStore;
     private readonly SecretStore _secretStore;
-    private readonly ILogger<JellyAnnotatorController> _logger;
+    private readonly ILogger<JellyCAPController> _logger;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="JellyAnnotatorController"/> class.
+    /// Initializes a new instance of the <see cref="JellyCAPController"/> class.
     /// </summary>
-    public JellyAnnotatorController(
+    public JellyCAPController(
         CollectionContextService collectionContextService,
         MetadataApplicationService metadataApplicationService,
         ProposalService proposalService,
         ProposalStore proposalStore,
         SecretStore secretStore,
-        ILogger<JellyAnnotatorController> logger)
+        ILogger<JellyCAPController> logger)
     {
         _collectionContextService = collectionContextService;
         _metadataApplicationService = metadataApplicationService;
@@ -49,7 +49,7 @@ public sealed class JellyAnnotatorController : ControllerBase
     public async Task<ActionResult<SettingsResponse>> GetSettings(CancellationToken cancellationToken)
     {
         var configuration = Plugin.Instance?.Configuration
-            ?? throw new InvalidOperationException("JellyAnnotator is not initialized.");
+            ?? throw new InvalidOperationException("JellyCAP is not initialized.");
         var (apiKey, source) = await _secretStore.ResolveAsync(
             configuration.ApiKeyEnvironmentVariable,
             cancellationToken).ConfigureAwait(false);
@@ -75,7 +75,7 @@ public sealed class JellyAnnotatorController : ControllerBase
         {
             var configuration = SettingsValidator.Validate(request.Configuration);
             var plugin = Plugin.Instance
-                ?? throw new InvalidOperationException("JellyAnnotator is not initialized.");
+                ?? throw new InvalidOperationException("JellyCAP is not initialized.");
             plugin.UpdateConfiguration(configuration);
 
             if (request.ClearStoredApiKey)
@@ -94,12 +94,12 @@ public sealed class JellyAnnotatorController : ControllerBase
         }
         catch (ArgumentException exception)
         {
-            _logger.LogWarning(exception, "JellyAnnotator settings were rejected as invalid.");
+            _logger.LogWarning(exception, "JellyCAP settings were rejected as invalid.");
             return BadRequest(new ProblemDetails { Title = "Invalid settings", Detail = exception.Message });
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "Failed to save JellyAnnotator settings.");
+            _logger.LogError(exception, "Failed to save JellyCAP settings.");
             return StatusCode(
                 StatusCodes.Status500InternalServerError,
                 new ProblemDetails { Title = "Settings could not be saved", Detail = exception.Message });
@@ -121,7 +121,7 @@ public sealed class JellyAnnotatorController : ControllerBase
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "JellyAnnotator provider connection test failed.");
+            _logger.LogError(exception, "JellyCAP provider connection test failed.");
             return StatusCode(
                 StatusCodes.Status502BadGateway,
                 new ConnectionTestResponse { Success = false, Message = exception.Message });
@@ -144,7 +144,7 @@ public sealed class JellyAnnotatorController : ControllerBase
         }
         catch (Exception exception)
         {
-            _logger.LogError(exception, "Failed to list Jellyfin collections for JellyAnnotator.");
+            _logger.LogError(exception, "Failed to list Jellyfin collections for JellyCAP.");
             return StatusCode(
                 StatusCodes.Status500InternalServerError,
                 new ProblemDetails { Title = "Collections could not be loaded", Detail = exception.Message });
@@ -166,7 +166,7 @@ public sealed class JellyAnnotatorController : ControllerBase
         }
         catch (KeyNotFoundException exception)
         {
-            _logger.LogWarning(exception, "JellyAnnotator collection {CollectionId} was not found.", collectionId);
+            _logger.LogWarning(exception, "JellyCAP collection {CollectionId} was not found.", collectionId);
             return NotFound(new ProblemDetails { Title = "Collection not found", Detail = exception.Message });
         }
     }
@@ -188,12 +188,12 @@ public sealed class JellyAnnotatorController : ControllerBase
         }
         catch (KeyNotFoundException exception)
         {
-            _logger.LogWarning(exception, "JellyAnnotator collection {CollectionId} was not found during generation.", collectionId);
+            _logger.LogWarning(exception, "JellyCAP collection {CollectionId} was not found during generation.", collectionId);
             return NotFound(new ProblemDetails { Title = "Collection not found", Detail = exception.Message });
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "JellyAnnotator proposal generation failed for collection {CollectionId}.", collectionId);
+            _logger.LogError(exception, "JellyCAP proposal generation failed for collection {CollectionId}.", collectionId);
             return StatusCode(
                 StatusCodes.Status502BadGateway,
                 new ProblemDetails { Title = "Generation failed", Detail = exception.Message });
@@ -266,17 +266,17 @@ public sealed class JellyAnnotatorController : ControllerBase
         }
         catch (KeyNotFoundException exception)
         {
-            _logger.LogWarning(exception, "JellyAnnotator proposal {ProposalId} or its collection was not found during approval.", proposalId);
+            _logger.LogWarning(exception, "JellyCAP proposal {ProposalId} or its collection was not found during approval.", proposalId);
             return NotFound(new ProblemDetails { Title = "Proposal or collection not found", Detail = exception.Message });
         }
         catch (StaleProposalException exception)
         {
-            _logger.LogWarning(exception, "JellyAnnotator proposal {ProposalId} is stale.", proposalId);
+            _logger.LogWarning(exception, "JellyCAP proposal {ProposalId} is stale.", proposalId);
             return Conflict(new ProblemDetails { Title = "Proposal is stale", Detail = exception.Message });
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
-            _logger.LogError(exception, "JellyAnnotator proposal {ProposalId} could not be applied.", proposalId);
+            _logger.LogError(exception, "JellyCAP proposal {ProposalId} could not be applied.", proposalId);
             return BadRequest(new ProblemDetails { Title = "Proposal could not be applied", Detail = exception.Message });
         }
     }
@@ -298,12 +298,12 @@ public sealed class JellyAnnotatorController : ControllerBase
         }
         catch (KeyNotFoundException exception)
         {
-            _logger.LogWarning(exception, "JellyAnnotator proposal {ProposalId} was not found during rejection.", proposalId);
+            _logger.LogWarning(exception, "JellyCAP proposal {ProposalId} was not found during rejection.", proposalId);
             return NotFound(new ProblemDetails { Title = "Proposal not found", Detail = exception.Message });
         }
         catch (InvalidOperationException exception)
         {
-            _logger.LogError(exception, "JellyAnnotator proposal {ProposalId} could not be rejected.", proposalId);
+            _logger.LogError(exception, "JellyCAP proposal {ProposalId} could not be rejected.", proposalId);
             return BadRequest(new ProblemDetails { Title = "Proposal could not be rejected", Detail = exception.Message });
         }
     }
