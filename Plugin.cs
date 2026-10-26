@@ -59,6 +59,14 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public string GetDataFilePath(string fileName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+        if (Path.IsPathRooted(fileName)
+            || !string.Equals(Path.GetFileName(fileName), fileName, StringComparison.Ordinal)
+            || fileName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+            || fileName is "." or "..")
+        {
+            throw new ArgumentException("Plugin data files must use a simple file name.", nameof(fileName));
+        }
+
         var currentPath = Path.Combine(DataFolderPath, fileName);
         var legacyPath = Path.Combine(ApplicationPaths.PluginsPath, LegacyAssemblyName, fileName);
         return File.Exists(currentPath) || !File.Exists(legacyPath) ? currentPath : legacyPath;

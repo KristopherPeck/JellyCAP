@@ -8,6 +8,7 @@ namespace Jellyfin.Plugin.JellyCAP.Services;
 /// </summary>
 public sealed class MetadataApplicationService
 {
+    private readonly SemaphoreSlim _decisionGate = new(1, 1);
     private readonly CollectionContextService _collectionContextService;
     private readonly ProposalStore _proposalStore;
 
@@ -34,93 +35,101 @@ public sealed class MetadataApplicationService
         ApplyProposalRequest request,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        if (!request.ApplyOverview
-            && !request.ApplyGenres
-            && !request.ApplyTags
-            && !request.ApplySortTitle
-            && !request.ApplyContentRating
-            && !request.ApplyCommunityRating)
+        await _decisionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            throw new ArgumentException("Select at least one metadata field to apply.", nameof(request));
-        }
-
-        var proposal = await GetPendingAsync(proposalId, cancellationToken).ConfigureAwait(false);
-        var collection = _collectionContextService.GetCollection(proposal.CollectionId);
-        var current = MetadataFingerprint.Snapshot(collection);
-        var currentFingerprint = proposal.FingerprintVersion >= MetadataFingerprint.CurrentVersion
-            ? MetadataFingerprint.Compute(current)
-            : MetadataFingerprint.ComputeLegacy(current);
-        if (!request.Force
-            && !string.Equals(currentFingerprint, proposal.OriginalFingerprint, StringComparison.Ordinal))
-        {
-            throw new StaleProposalException(
-                "The collection metadata changed after this proposal was generated. Review the current metadata or explicitly force the update.");
-        }
-
-        var configuration = SettingsValidator.Validate(
-            Plugin.Instance?.Configuration
-            ?? throw new InvalidOperationException("JellyCAP is not initialized."));
-
-        if (request.ApplySortTitle)
-        {
-            collection.ForcedSortName = NormalizeScalar(request.SortTitle, 500);
-        }
-
-        if (request.ApplyContentRating)
-        {
-            var contentRating = NormalizeScalar(request.ContentRating, 100);
-            collection.OfficialRating = string.IsNullOrWhiteSpace(contentRating) ? null : contentRating;
-        }
-
-        if (request.ApplyCommunityRating)
-        {
-            if (request.CommunityRating is < 0 or > 10
-                || (request.CommunityRating.HasValue && !float.IsFinite(request.CommunityRating.Value)))
+            ArgumentNullException.ThrowIfNull(request);
+            if (!request.ApplyOverview
+                && !request.ApplyGenres
+                && !request.ApplyTags
+                && !request.ApplySortTitle
+                && !request.ApplyContentRating
+                && !request.ApplyCommunityRating)
             {
-                throw new ArgumentOutOfRangeException(
-                    nameof(request),
-                    "Community rating must be between 0 and 10.");
+                throw new ArgumentException("Select at least one metadata field to apply.", nameof(request));
             }
 
-            collection.CommunityRating = request.CommunityRating.HasValue
-                ? (float)Math.Round(request.CommunityRating.Value, 1, MidpointRounding.AwayFromZero)
-                : null;
+            var proposal = await GetPendingAsync(proposalId, cancellationToken).ConfigureAwait(false);
+            var collection = _collectionContextService.GetCollection(proposal.CollectionId);
+            var current = MetadataFingerprint.Snapshot(collection);
+            var currentFingerprint = proposal.FingerprintVersion >= MetadataFingerprint.CurrentVersion
+                ? MetadataFingerprint.Compute(current)
+                : MetadataFingerprint.ComputeLegacy(current);
+            if (!request.Force
+                && !string.Equals(currentFingerprint, proposal.OriginalFingerprint, StringComparison.Ordinal))
+            {
+                throw new StaleProposalException(
+                    "The collection metadata changed after this proposal was generated. Review the current metadata or explicitly force the update.");
+            }
+
+            var configuration = SettingsValidator.Validate(
+                Plugin.Instance?.Configuration
+                ?? throw new InvalidOperationException("JellyCAP is not initialized."));
+
+            if (request.ApplySortTitle)
+            {
+                collection.ForcedSortName = NormalizeScalar(request.SortTitle, 500);
+            }
+
+            if (request.ApplyContentRating)
+            {
+                var contentRating = NormalizeScalar(request.ContentRating, 100);
+                collection.OfficialRating = string.IsNullOrWhiteSpace(contentRating) ? null : contentRating;
+            }
+
+            if (request.ApplyCommunityRating)
+            {
+                if (request.CommunityRating is < 0 or > 10
+                    || (request.CommunityRating.HasValue && !float.IsFinite(request.CommunityRating.Value)))
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(request),
+                        "Community rating must be between 0 and 10.");
+                }
+
+                collection.CommunityRating = request.CommunityRating.HasValue
+                    ? (float)Math.Round(request.CommunityRating.Value, 1, MidpointRounding.AwayFromZero)
+                    : null;
+            }
+
+            if (request.ApplyOverview)
+            {
+                collection.Overview = NormalizeOverview(request.Overview, configuration.MaximumOverviewCharacters);
+            }
+
+            if (request.ApplyGenres)
+            {
+                collection.Genres = NormalizeList(request.Genres, 500);
+            }
+
+            if (request.ApplyTags)
+            {
+                collection.Tags = NormalizeList(request.Tags, 500);
+            }
+
+            collection.OnMetadataChanged();
+            await collection.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
+
+            var applied = MetadataFingerprint.Snapshot(collection);
+            proposal.Proposed = new GeneratedMetadata
+            {
+                SortTitle = applied.SortTitle,
+                ContentRating = applied.ContentRating,
+                CommunityRating = applied.CommunityRating,
+                Overview = applied.Overview,
+                Genres = applied.Genres,
+                Tags = applied.Tags,
+                Warnings = proposal.Proposed.Warnings
+            };
+            proposal.Status = ProposalStatus.Applied;
+            proposal.DecidedAtUtc = DateTimeOffset.UtcNow;
+            await _proposalStore.SaveAsync(proposal, cancellationToken).ConfigureAwait(false);
+            return proposal;
         }
-
-        if (request.ApplyOverview)
+        finally
         {
-            collection.Overview = NormalizeOverview(request.Overview, configuration.MaximumOverviewCharacters);
+            _decisionGate.Release();
         }
-
-        if (request.ApplyGenres)
-        {
-            collection.Genres = NormalizeList(request.Genres, 500);
-        }
-
-        if (request.ApplyTags)
-        {
-            collection.Tags = NormalizeList(request.Tags, 500);
-        }
-
-        collection.OnMetadataChanged();
-        await collection.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
-
-        var applied = MetadataFingerprint.Snapshot(collection);
-        proposal.Proposed = new GeneratedMetadata
-        {
-            SortTitle = applied.SortTitle,
-            ContentRating = applied.ContentRating,
-            CommunityRating = applied.CommunityRating,
-            Overview = applied.Overview,
-            Genres = applied.Genres,
-            Tags = applied.Tags,
-            Warnings = proposal.Proposed.Warnings
-        };
-        proposal.Status = ProposalStatus.Applied;
-        proposal.DecidedAtUtc = DateTimeOffset.UtcNow;
-        await _proposalStore.SaveAsync(proposal, cancellationToken).ConfigureAwait(false);
-        return proposal;
     }
 
     /// <summary>
@@ -131,11 +140,19 @@ public sealed class MetadataApplicationService
     /// <returns>The rejected proposal.</returns>
     public async Task<MetadataProposal> RejectAsync(Guid proposalId, CancellationToken cancellationToken)
     {
-        var proposal = await GetPendingAsync(proposalId, cancellationToken).ConfigureAwait(false);
-        proposal.Status = ProposalStatus.Rejected;
-        proposal.DecidedAtUtc = DateTimeOffset.UtcNow;
-        await _proposalStore.SaveAsync(proposal, cancellationToken).ConfigureAwait(false);
-        return proposal;
+        await _decisionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var proposal = await GetPendingAsync(proposalId, cancellationToken).ConfigureAwait(false);
+            proposal.Status = ProposalStatus.Rejected;
+            proposal.DecidedAtUtc = DateTimeOffset.UtcNow;
+            await _proposalStore.SaveAsync(proposal, cancellationToken).ConfigureAwait(false);
+            return proposal;
+        }
+        finally
+        {
+            _decisionGate.Release();
+        }
     }
 
     private async Task<MetadataProposal> GetPendingAsync(Guid proposalId, CancellationToken cancellationToken)
@@ -171,6 +188,7 @@ public sealed class MetadataApplicationService
         return (values ?? [])
             .Where(value => !string.IsNullOrWhiteSpace(value))
             .Select(value => value.Trim())
+            .Select(value => value.Length <= 200 ? value : value[..200].TrimEnd())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(maximumItems)
             .ToArray();

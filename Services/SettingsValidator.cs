@@ -63,6 +63,13 @@ internal static class SettingsValidator
             throw new ArgumentException("The API key environment variable name is invalid.", nameof(source));
         }
 
+        if (!IsAllowedApiKeyEnvironmentVariable(configuration))
+        {
+            throw new ArgumentException(
+                "The API key environment variable must begin with JELLYCAP_. OPENAI_API_KEY and ANTHROPIC_API_KEY are allowed only with their matching default provider endpoint.",
+                nameof(source));
+        }
+
         if (usesAi
             && configuration.ProviderType == AiProviderType.OpenAiCompatible
             && string.IsNullOrWhiteSpace(configuration.Endpoint))
@@ -75,9 +82,19 @@ internal static class SettingsValidator
             if (!Uri.TryCreate(configuration.Endpoint, UriKind.Absolute, out var endpoint)
                 || (endpoint.Scheme != Uri.UriSchemeHttp && endpoint.Scheme != Uri.UriSchemeHttps)
                 || !string.IsNullOrEmpty(endpoint.UserInfo)
+                || !string.IsNullOrEmpty(endpoint.Query)
                 || !string.IsNullOrEmpty(endpoint.Fragment))
             {
-                throw new ArgumentException("The provider endpoint must be an absolute HTTP or HTTPS URL without embedded credentials.", nameof(source));
+                throw new ArgumentException("The provider endpoint must be an absolute HTTP or HTTPS URL without embedded credentials, a query string, or a fragment.", nameof(source));
+            }
+
+            if (endpoint.Scheme == Uri.UriSchemeHttp
+                && !endpoint.IsLoopback
+                && !configuration.AllowInsecureEndpoint)
+            {
+                throw new ArgumentException(
+                    "Non-loopback HTTP provider endpoints require explicit insecure-endpoint permission because metadata and API keys would be sent without transport encryption.",
+                    nameof(source));
             }
         }
 
@@ -106,6 +123,41 @@ internal static class SettingsValidator
         }
 
         return configuration;
+    }
+
+    /// <summary>
+    /// Determines whether a configured environment-variable lookup is constrained to a plugin-owned
+    /// name or the standard variable for an official provider using its default endpoint.
+    /// </summary>
+    public static bool IsAllowedApiKeyEnvironmentVariable(PluginConfiguration configuration)
+    {
+        var name = configuration.ApiKeyEnvironmentVariable?.Trim() ?? string.Empty;
+        if (name.Length == 0)
+        {
+            return true;
+        }
+
+        var isPluginOwnedName = name.StartsWith("JELLYCAP_", StringComparison.Ordinal)
+            && name.Length > "JELLYCAP_".Length
+            && name.All(character => (character >= 'A' && character <= 'Z')
+                || (character >= '0' && character <= '9')
+                || character == '_');
+        if (isPluginOwnedName)
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(configuration.Endpoint))
+        {
+            return false;
+        }
+
+        return configuration.ProviderType switch
+        {
+            AiProviderType.OpenAi => string.Equals(name, "OPENAI_API_KEY", StringComparison.Ordinal),
+            AiProviderType.Anthropic => string.Equals(name, "ANTHROPIC_API_KEY", StringComparison.Ordinal),
+            _ => false
+        };
     }
 }
 

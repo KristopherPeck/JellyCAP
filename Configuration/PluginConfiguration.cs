@@ -19,6 +19,11 @@ public sealed class PluginConfiguration : BasePluginConfiguration
     public string Endpoint { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets a value indicating whether a non-loopback provider endpoint may use plaintext HTTP.
+    /// </summary>
+    public bool AllowInsecureEndpoint { get; set; }
+
+    /// <summary>
     /// Gets or sets the model identifier passed to the provider.
     /// </summary>
     public string Model { get; set; } = string.Empty;
@@ -178,6 +183,7 @@ public sealed class PluginConfiguration : BasePluginConfiguration
         {
             ProviderType = ProviderType,
             Endpoint = Endpoint,
+            AllowInsecureEndpoint = AllowInsecureEndpoint,
             Model = Model,
             ApiKeyEnvironmentVariable = ApiKeyEnvironmentVariable,
             GenerateOverview = GenerateOverview,

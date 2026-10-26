@@ -12,6 +12,7 @@ namespace Jellyfin.Plugin.JellyCAP.Controllers;
 /// </summary>
 [ApiController]
 [Authorize(Policy = "RequiresElevation")]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 [Route("JellyCAP")]
 public sealed class JellyCAPController : ControllerBase
 {
@@ -50,8 +51,11 @@ public sealed class JellyCAPController : ControllerBase
     {
         var configuration = Plugin.Instance?.Configuration
             ?? throw new InvalidOperationException("JellyCAP is not initialized.");
+        var safeEnvironmentVariable = SettingsValidator.IsAllowedApiKeyEnvironmentVariable(configuration)
+            ? configuration.ApiKeyEnvironmentVariable
+            : string.Empty;
         var (apiKey, source) = await _secretStore.ResolveAsync(
-            configuration.ApiKeyEnvironmentVariable,
+            safeEnvironmentVariable,
             cancellationToken).ConfigureAwait(false);
         return Ok(new SettingsResponse
         {
@@ -65,6 +69,7 @@ public sealed class JellyCAPController : ControllerBase
     /// Validates and saves plugin settings and, when supplied, a provider credential.
     /// </summary>
     [HttpPut("Settings")]
+    [RequestSizeLimit(64 * 1024)]
     [ProducesResponseType<SettingsResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<SettingsResponse>> UpdateSettings(
@@ -74,6 +79,9 @@ public sealed class JellyCAPController : ControllerBase
         try
         {
             var configuration = SettingsValidator.Validate(request.Configuration);
+            var replacementApiKey = string.IsNullOrWhiteSpace(request.ApiKey)
+                ? null
+                : SecretStore.ValidateApiKey(request.ApiKey);
             var plugin = Plugin.Instance
                 ?? throw new InvalidOperationException("JellyCAP is not initialized.");
             plugin.UpdateConfiguration(configuration);
@@ -83,9 +91,9 @@ public sealed class JellyCAPController : ControllerBase
                 await _secretStore.ClearAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            if (!string.IsNullOrWhiteSpace(request.ApiKey))
+            if (replacementApiKey is not null)
             {
-                await _secretStore.WriteAsync(request.ApiKey.Trim(), cancellationToken).ConfigureAwait(false);
+                await _secretStore.WriteAsync(replacementApiKey, cancellationToken).ConfigureAwait(false);
             }
 
             await _proposalStore.PruneAsync(cancellationToken).ConfigureAwait(false);
@@ -110,7 +118,9 @@ public sealed class JellyCAPController : ControllerBase
     /// Sends a small synthetic request to the configured provider.
     /// </summary>
     [HttpPost("Settings/Test")]
+    [RequestSizeLimit(1024)]
     [ProducesResponseType<ConnectionTestResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<ConnectionTestResponse>> TestConnection(CancellationToken cancellationToken)
     {
@@ -118,6 +128,13 @@ public sealed class JellyCAPController : ControllerBase
         {
             await _proposalService.TestConnectionAsync(cancellationToken).ConfigureAwait(false);
             return Ok(new ConnectionTestResponse { Success = true, Message = "Provider connection succeeded." });
+        }
+        catch (GenerationCapacityException exception)
+        {
+            _logger.LogWarning(exception, "JellyCAP rejected a provider test because the concurrency limit was reached.");
+            return StatusCode(
+                StatusCodes.Status429TooManyRequests,
+                new ConnectionTestResponse { Success = false, Message = exception.Message });
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -177,6 +194,7 @@ public sealed class JellyCAPController : ControllerBase
     [HttpPost("Collections/{collectionId:guid}/Generate")]
     [ProducesResponseType<MetadataProposal>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     [ProducesResponseType(StatusCodes.Status502BadGateway)]
     public async Task<ActionResult<MetadataProposal>> Generate(
         Guid collectionId,
@@ -190,6 +208,13 @@ public sealed class JellyCAPController : ControllerBase
         {
             _logger.LogWarning(exception, "JellyCAP collection {CollectionId} was not found during generation.", collectionId);
             return NotFound(new ProblemDetails { Title = "Collection not found", Detail = exception.Message });
+        }
+        catch (GenerationCapacityException exception)
+        {
+            _logger.LogWarning(exception, "JellyCAP rejected a generation request because the provider concurrency limit was reached.");
+            return StatusCode(
+                StatusCodes.Status429TooManyRequests,
+                new ProblemDetails { Title = "Provider is busy", Detail = exception.Message });
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
@@ -248,6 +273,7 @@ public sealed class JellyCAPController : ControllerBase
     /// Applies reviewer-selected fields from a pending proposal.
     /// </summary>
     [HttpPost("Proposals/{proposalId:guid}/Apply")]
+    [RequestSizeLimit(512 * 1024)]
     [ProducesResponseType<MetadataProposal>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]

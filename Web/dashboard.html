@@ -18,8 +18,8 @@
         .ja-panel[hidden] { display: none; }
         .ja-toolbar { display: flex; flex-wrap: wrap; gap: .75em; align-items: flex-end; margin-bottom: 1em; }
         .ja-toolbar .inputContainer { flex: 1 1 18em; margin-bottom: 0; }
-        #collectionSearch, #refreshCollections { height: 2.75em; min-height: 2.75em; box-sizing: border-box; }
-        #refreshCollections { margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
+        #collectionSearch, #refreshCollections, #queueAllCollections { height: 2.75em; min-height: 2.75em; box-sizing: border-box; }
+        #refreshCollections, #queueAllCollections { margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
         .ja-pager { display: flex; align-items: center; justify-content: center; gap: .75em; margin: 1.25em 0; }
         .ja-page-info { min-width: 12em; text-align: center; }
         .ja-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); gap: 1em; }
@@ -72,6 +72,7 @@
                         <input is="emby-input" id="collectionSearch" type="search" autocomplete="off">
                     </div>
                     <button is="emby-button" type="button" class="raised button-submit" id="refreshCollections">Refresh</button>
+                    <button is="emby-button" type="button" class="raised" id="queueAllCollections">Queue all collections</button>
                 </div>
                 <div id="generationQueueStatus" class="ja-message ja-muted" role="status" aria-live="polite"></div>
                 <div id="collectionsList" class="ja-grid"></div>
@@ -112,7 +113,7 @@
                         <div class="inputContainer wide">
                             <label class="inputLabel inputLabelUnfocused" for="endpoint">Endpoint or base URL</label>
                             <input is="emby-input" id="endpoint" type="url" placeholder="Leave blank for the provider default">
-                            <div class="fieldDescription">Required for OpenAI-compatible providers. Credentials embedded in URLs are rejected.</div>
+                            <div class="fieldDescription">Required for OpenAI-compatible providers. Requests originate from the Jellyfin server, so use only a trusted endpoint. Embedded credentials, query strings, and fragments are rejected.</div>
                         </div>
                         <div class="inputContainer">
                             <label class="inputLabel inputLabelUnfocused" for="apiKey">API key</label>
@@ -121,12 +122,17 @@
                         </div>
                         <div class="inputContainer">
                             <label class="inputLabel inputLabelUnfocused" for="apiKeyEnvironmentVariable">API key environment variable</label>
-                            <input is="emby-input" id="apiKeyEnvironmentVariable" type="text" placeholder="Optional; takes precedence">
+                            <input is="emby-input" id="apiKeyEnvironmentVariable" type="text" maxlength="200" placeholder="JELLYCAP_API_KEY">
+                            <div class="fieldDescription">Use a dedicated JELLYCAP_ variable. Standard provider variables are accepted only with that provider's default endpoint.</div>
                         </div>
                     </div>
 
                     <p class="fieldDescription">Options labeled “with AI” use the configured provider. The community rating average is calculated locally from eligible collection members.</p>
                     <div class="ja-checks">
+                        <div class="ja-option">
+                            <label class="emby-checkbox-label"><input is="emby-checkbox" id="allowInsecureEndpoint" type="checkbox" aria-describedby="helpAllowInsecureEndpoint"><span>Allow non-loopback HTTP endpoint</span></label>
+                            <span id="helpAllowInsecureEndpoint" class="ja-info" tabindex="0" title="Allows metadata and any API key to be sent without transport encryption. Loopback HTTP endpoints do not require this option."><span aria-hidden="true">i</span><span class="ja-sr-only">Allows metadata and any API key to be sent without transport encryption. Loopback HTTP endpoints do not require this option.</span></span>
+                        </div>
                         <div class="ja-option">
                             <label class="emby-checkbox-label"><input is="emby-checkbox" id="generateOverview" type="checkbox" aria-describedby="helpGenerateOverview"><span>Generate overview with AI</span></label>
                             <span id="helpGenerateOverview" class="ja-info" tabindex="0" title="AI writes a collection overview from eligible item metadata, using the selected style, language, spoiler, and length settings."><span aria-hidden="true">i</span><span class="ja-sr-only">AI writes a collection overview from eligible item metadata, using the selected style, language, spoiler, and length settings.</span></span>
@@ -285,6 +291,7 @@
             var generationJobs = Object.create(null);
             var generationBatchSucceeded = 0;
             var generationBatchFailed = 0;
+            var queueAllLoading = false;
 
             function api(path, options) {
                 var request = options || {};
@@ -432,6 +439,7 @@
                         var actions = element('div', 'ja-actions ja-generation-actions');
                         var generate = element('button', 'raised button-submit', 'Generate proposal');
                         generate.setAttribute('is', 'emby-button');
+                        generate.setAttribute('data-generation-collection-id', collection.id);
                         generate.type = 'button';
                         var generationStatus = element('span', 'ja-message');
                         generate.addEventListener('click', function () {
@@ -471,6 +479,7 @@
             function updateGenerationQueueStatus() {
                 var queued = generationQueue.length;
                 var target = byId('generationQueueStatus');
+                updateQueueAllButton();
                 if (activeGenerationCount === 0 && queued === 0) {
                     target.textContent = '';
                     return;
@@ -478,6 +487,72 @@
 
                 target.textContent = activeGenerationCount + ' generating, ' + queued + ' queued (limit '
                     + maximumConcurrentGenerations + ').';
+            }
+
+            function updateQueueAllButton() {
+                var button = byId('queueAllCollections');
+                var busy = queueAllLoading || activeGenerationCount > 0 || generationQueue.length > 0;
+                button.disabled = busy;
+                button.setAttribute('aria-disabled', String(busy));
+                button.setAttribute('aria-busy', String(queueAllLoading));
+                button.textContent = queueAllLoading ? 'Loading collections...' : 'Queue all collections';
+            }
+
+            function loadAllCollectionIds(search, startIndex, collectionIds) {
+                var pageSize = 100;
+                var path = 'Collections?startIndex=' + startIndex + '&limit=' + pageSize
+                    + (search ? '&search=' + encodeURIComponent(search) : '');
+                return api(path).then(function (result) {
+                    var items = result.items || [];
+                    items.forEach(function (collection) { collectionIds.push(collection.id); });
+                    var nextIndex = result.startIndex + items.length;
+                    if (items.length > 0 && nextIndex < result.totalCount) {
+                        return loadAllCollectionIds(search, nextIndex, collectionIds);
+                    }
+
+                    return collectionIds;
+                });
+            }
+
+            function queueAllCollections() {
+                if (queueAllLoading || activeGenerationCount > 0 || generationQueue.length > 0) { return; }
+                queueAllLoading = true;
+                updateQueueAllButton();
+                var search = value('collectionSearch').trim();
+                loadAllCollectionIds(search, 0, [])
+                    .then(function (collectionIds) {
+                        var seen = Object.create(null);
+                        var uniqueIds = collectionIds.filter(function (collectionId) {
+                            if (seen[collectionId] || generationJobs[collectionId]) { return false; }
+                            seen[collectionId] = true;
+                            return true;
+                        });
+                        if (!uniqueIds.length) {
+                            message(search
+                                ? 'No collections match the current search.'
+                                : 'There are no collections to queue.');
+                            return;
+                        }
+
+                        var scope = search ? ' matching the current search' : '';
+                        if (!window.confirm(
+                            'Queue ' + uniqueIds.length + ' collection(s)' + scope
+                            + '? This may send one provider request and create one pending review per collection, including collections that already have a pending review.')) {
+                            return;
+                        }
+
+                        uniqueIds.forEach(function (collectionId) {
+                            var button = page.querySelector('[data-generation-collection-id="' + collectionId + '"]');
+                            var status = button ? button.parentNode.querySelector('.ja-message') : null;
+                            enqueueGeneration(collectionId, button, status);
+                        });
+                        message(uniqueIds.length + ' collection(s) added to the generation queue.', 'success');
+                    })
+                    .catch(function (error) { message(errorText(error), 'error'); })
+                    .finally(function () {
+                        queueAllLoading = false;
+                        updateQueueAllButton();
+                    });
             }
 
             function enqueueGeneration(collectionId, button, status) {
@@ -766,6 +841,7 @@
                 var config = response.configuration;
                 setValue('providerType', enumValue(config.providerType, ['openai', 'anthropic', 'openaicompatible']));
                 setValue('endpoint', config.endpoint);
+                setChecked('allowInsecureEndpoint', config.allowInsecureEndpoint);
                 setValue('model', config.model);
                 setValue('apiKeyEnvironmentVariable', config.apiKeyEnvironmentVariable);
                 setChecked('generateOverview', config.generateOverview);
@@ -818,6 +894,7 @@
                     configuration: {
                         providerType: numberValue('providerType'),
                         endpoint: value('endpoint'),
+                        allowInsecureEndpoint: checked('allowInsecureEndpoint'),
                         model: value('model'),
                         apiKeyEnvironmentVariable: value('apiKeyEnvironmentVariable'),
                         generateOverview: checked('generateOverview'),
@@ -882,6 +959,7 @@
                     tab.addEventListener('click', function () { showPanel(tab.dataset.panel); });
                 });
                 byId('refreshCollections').addEventListener('click', function () { loadCollections(false); });
+                byId('queueAllCollections').addEventListener('click', queueAllCollections);
                 byId('collectionSearch').addEventListener('keydown', function (event) {
                     if (event.key === 'Enter') { event.preventDefault(); loadCollections(true); }
                 });

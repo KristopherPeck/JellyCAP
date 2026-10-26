@@ -15,7 +15,7 @@ The initial release targets Jellyfin 12.3 and .NET 10.
 - Presents current and proposed values side by side and allows edits before approval.
 - Shows the current pending-review count on the JellyCAP dashboard.
 - Paginates collections 50 at a time and pending reviews 25 at a time.
-- Queues generation requests from multiple collections, disables each queued/running collection button, and runs up to a configurable number concurrently.
+- Queues generation requests from individual collections or every collection matching the current search, disables each queued/running collection button, and runs up to a configurable number concurrently.
 - Stays on the collection list after generation by default, with an option to open Pending reviews automatically.
 - Prunes approved and rejected proposal history using configurable age and count limits while preserving every pending proposal.
 - Writes handled provider, storage, configuration, and review failures through Jellyfin's logging system.
@@ -39,11 +39,13 @@ The provider receives a bounded JSON context containing only:
 - Eligible child type, name, sort title, content rating, community rating, production year, overview, genres, and tags
 - The number of eligible items omitted by the configured limit
 
-File paths, media streams, provider identifiers, user history, and credentials are not included. Child metadata is marked as untrusted data in the prompt to reduce prompt-injection risk.
+File paths, media streams, provider identifiers, user history, and credentials are not included. Child metadata is marked as untrusted data at both the system-instruction and prompt levels to reduce prompt-injection risk. Context is bounded by both the configured item count and a hard 200,000-character ceiling to limit memory use and accidental provider cost.
 
-API keys can be stored in the plugin data directory or loaded from an environment variable. The environment variable takes precedence. The settings API reports only whether a key exists and never returns the key itself.
+API keys can be stored in the plugin data directory or loaded from an environment variable. The environment variable takes precedence. Dedicated environment variables must use the `JELLYCAP_` prefix; `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are accepted only for their matching provider with its default endpoint. This prevents the plugin from being configured to read unrelated process secrets. The settings API reports only whether a key exists and never returns the key itself.
 
-Stored keys are plaintext server-side secrets, like many Jellyfin plugin credentials. Protect and back up the Jellyfin data directory accordingly; prefer an environment variable when the host's secret-management setup supports one.
+Stored keys are plaintext server-side secrets, like many Jellyfin plugin credentials. On Unix systems JellyCAP restricts the secret file to its owner; Windows installations rely on the Jellyfin data directory's ACLs. Protect and back up that directory accordingly, and prefer a dedicated environment variable when the host's secret-management setup supports one.
+
+All plugin API routes require Jellyfin's elevated-privilege authorization policy. Provider redirects are disabled, response bodies are capped at 2 MB, provider error text is bounded and API keys are redacted, SQL statements are parameterized, and browser-rendered metadata uses text nodes rather than HTML injection. Non-loopback plaintext HTTP endpoints require an explicit opt-in; use only endpoints trusted to receive the selected collection metadata and provider credential. A server-wide limit of five simultaneous provider requests also applies when requests bypass the dashboard queue.
 
 ## Review workflow
 
@@ -55,7 +57,7 @@ Stored keys are plaintext server-side secrets, like many Jellyfin plugin credent
 
 The pending-review badge updates after generation, approval, rejection, and review refresh. Enable **Open Pending reviews after generating a proposal** in Settings if you prefer the dashboard to switch to the new proposal automatically.
 
-The dashboard runs two collection generations concurrently by default, configurable from 1 through 5. Additional selections remain queued and display their state on the collection card. Automatic navigation to Pending reviews waits until the current browser-session queue finishes.
+The dashboard runs two collection generations concurrently by default, configurable from 1 through 5. Additional selections remain queued and display their state on the collection card. Queue all collections confirms the complete batch size and respects the current search filter. Automatic navigation to Pending reviews waits until the current browser-session queue finishes. The queue belongs to the open dashboard session, so closing or reloading the page abandons requests that have not started; requests already accepted by the server continue normally.
 
 Completed proposal retention applies to approved and rejected proposals as one combined history. The defaults retain completed proposals for 7 days, capped at the newest 100 records. Setting either completed-history limit to 0 removes completed proposals immediately. Pending proposals are never removed by retention.
 
@@ -86,7 +88,7 @@ On the first database access after upgrading, JellyCAP transactionally imports a
 
 ## Current scope
 
-- Generation is intentionally manual and collection-by-collection.
+- Generation is manually initiated from the dashboard, either collection-by-collection or through the browser-session batch queue; there is no unattended scheduled generation.
 - Proposals are persisted in a dedicated SQLite database; collection and pending-review API responses are paginated.
 - Only administrators can access the plugin API and dashboard.
 - Provider calls are made directly by the Jellyfin server.

@@ -7,6 +7,8 @@ namespace Jellyfin.Plugin.JellyCAP.Services;
 /// </summary>
 public sealed class SecretStore
 {
+    private const int MaximumApiKeyLength = 8192;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase
@@ -29,7 +31,7 @@ public sealed class SecretStore
             var environmentKey = Environment.GetEnvironmentVariable(environmentVariable.Trim());
             if (!string.IsNullOrWhiteSpace(environmentKey))
             {
-                return (environmentKey.Trim(), "environment");
+                return (ValidateApiKey(environmentKey), "environment");
             }
         }
 
@@ -46,13 +48,13 @@ public sealed class SecretStore
     /// <param name="cancellationToken">Cancellation token.</param>
     public async Task WriteAsync(string apiKey, CancellationToken cancellationToken)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(apiKey);
+        var validatedApiKey = ValidateApiKey(apiKey);
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             var path = GetSecretPath();
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            var payload = JsonSerializer.Serialize(new SecretDocument { ApiKey = apiKey.Trim() }, JsonOptions);
+            var payload = JsonSerializer.Serialize(new SecretDocument { ApiKey = validatedApiKey }, JsonOptions);
             await WriteAtomicallyAsync(path, payload, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -93,8 +95,10 @@ public sealed class SecretStore
                 return string.Empty;
             }
 
+            ApplyRestrictedPermissions(path);
             var payload = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-            return JsonSerializer.Deserialize<SecretDocument>(payload, JsonOptions)?.ApiKey?.Trim() ?? string.Empty;
+            var apiKey = JsonSerializer.Deserialize<SecretDocument>(payload, JsonOptions)?.ApiKey;
+            return string.IsNullOrWhiteSpace(apiKey) ? string.Empty : ValidateApiKey(apiKey);
         }
         finally
         {
@@ -117,6 +121,8 @@ public sealed class SecretStore
         try
         {
             await File.WriteAllTextAsync(temporary, content, cancellationToken).ConfigureAwait(false);
+            ApplyRestrictedPermissions(temporary);
+
             File.Move(temporary, destination, true);
         }
         finally
@@ -125,6 +131,31 @@ public sealed class SecretStore
             {
                 File.Delete(temporary);
             }
+        }
+    }
+
+    internal static string ValidateApiKey(string apiKey)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(apiKey);
+        var normalized = apiKey.Trim();
+        if (normalized.Length > MaximumApiKeyLength
+            || normalized.Any(character => char.IsControl(character)))
+        {
+            throw new ArgumentException(
+                $"The API key must be at most {MaximumApiKeyLength} characters and cannot contain control characters.",
+                nameof(apiKey));
+        }
+
+        return normalized;
+    }
+
+    private static void ApplyRestrictedPermissions(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite);
         }
     }
 

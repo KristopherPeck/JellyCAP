@@ -8,6 +8,8 @@ namespace Jellyfin.Plugin.JellyCAP.Services;
 /// </summary>
 public sealed class ProposalService
 {
+    private static readonly SemaphoreSlim ProviderGate = new(5, 5);
+
     private readonly CollectionContextService _collectionContextService;
     private readonly AiProviderClient _providerClient;
     private readonly SecretStore _secretStore;
@@ -49,14 +51,22 @@ public sealed class ProposalService
         var generated = new GeneratedMetadata();
         if (usesAi)
         {
-            var (apiKey, _) = await _secretStore.ResolveAsync(
-                configuration.ApiKeyEnvironmentVariable,
-                cancellationToken).ConfigureAwait(false);
-            generated = await _providerClient.GenerateAsync(
-                context,
-                configuration,
-                apiKey,
-                cancellationToken).ConfigureAwait(false);
+            await EnterProviderGateAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var (apiKey, _) = await _secretStore.ResolveAsync(
+                    configuration.ApiKeyEnvironmentVariable,
+                    cancellationToken).ConfigureAwait(false);
+                generated = await _providerClient.GenerateAsync(
+                    context,
+                    configuration,
+                    apiKey,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                ProviderGate.Release();
+            }
         }
         var collection = _collectionContextService.GetCollection(collectionId);
         var original = MetadataFingerprint.Snapshot(collection);
@@ -99,24 +109,41 @@ public sealed class ProposalService
         configuration.GenerateCommunityRating = false;
         configuration = SettingsValidator.Validate(configuration);
         configuration.MaximumOverviewCharacters = 100;
-        var (apiKey, _) = await _secretStore.ResolveAsync(
-            configuration.ApiKeyEnvironmentVariable,
-            cancellationToken).ConfigureAwait(false);
-        var context = new CollectionContext
+        await EnterProviderGateAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            CollectionName = "Connection test",
-            Items =
-            [
-                new CollectionContextItem
-                {
-                    Type = "Movie",
-                    Name = "Connection test item",
-                    Overview = "A harmless synthetic item used to verify provider configuration."
-                }
-            ]
-        };
+            var (apiKey, _) = await _secretStore.ResolveAsync(
+                configuration.ApiKeyEnvironmentVariable,
+                cancellationToken).ConfigureAwait(false);
+            var context = new CollectionContext
+            {
+                CollectionName = "Connection test",
+                Items =
+                [
+                    new CollectionContextItem
+                    {
+                        Type = "Movie",
+                        Name = "Connection test item",
+                        Overview = "A harmless synthetic item used to verify provider configuration."
+                    }
+                ]
+            };
 
-        _ = await _providerClient.GenerateAsync(context, configuration, apiKey, cancellationToken).ConfigureAwait(false);
+            _ = await _providerClient.GenerateAsync(context, configuration, apiKey, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            ProviderGate.Release();
+        }
+    }
+
+    private static async Task EnterProviderGateAsync(CancellationToken cancellationToken)
+    {
+        if (!await ProviderGate.WaitAsync(TimeSpan.Zero, cancellationToken).ConfigureAwait(false))
+        {
+            throw new GenerationCapacityException(
+                "JellyCAP is already processing the maximum of five provider requests. Try again after an active request finishes.");
+        }
     }
 
     private static GeneratedMetadata ApplyPolicies(
@@ -314,5 +341,20 @@ public sealed class ProposalService
             .Select(value => value.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+}
+
+/// <summary>
+/// Indicates that the server-wide provider request safety limit has been reached.
+/// </summary>
+public sealed class GenerationCapacityException : InvalidOperationException
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="GenerationCapacityException"/> class.
+    /// </summary>
+    /// <param name="message">The capacity failure message.</param>
+    public GenerationCapacityException(string message)
+        : base(message)
+    {
     }
 }

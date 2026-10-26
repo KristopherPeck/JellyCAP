@@ -14,6 +14,8 @@ namespace Jellyfin.Plugin.JellyCAP.Services;
 /// </summary>
 public sealed class CollectionContextService
 {
+    private const int MaximumContextCharacters = 200_000;
+
     private readonly ILibraryManager _libraryManager;
 
     /// <summary>
@@ -113,6 +115,7 @@ public sealed class CollectionContextService
             .Where(rating => rating is >= 0 and <= 10)
             .Select(rating => rating!.Value)
             .ToArray();
+        var boundedItems = BuildBoundedItems(ordered, boundedMaximum);
 
         return new CollectionContext
         {
@@ -127,12 +130,37 @@ public sealed class CollectionContextService
             CurrentOverview = LimitText(collection.Overview, 5000),
             CurrentGenres = Normalize(collection.Genres),
             CurrentTags = Normalize(collection.Tags),
-            Items = ordered
-                .Take(boundedMaximum)
-                .Select(ToContextItem)
-                .ToArray(),
-            OmittedItemCount = Math.Max(0, ordered.Length - boundedMaximum)
+            Items = boundedItems,
+            OmittedItemCount = Math.Max(0, ordered.Length - boundedItems.Length)
         };
+    }
+
+    private static CollectionContextItem[] BuildBoundedItems(
+        IEnumerable<BaseItem> orderedItems,
+        int maximumItems)
+    {
+        var result = new List<CollectionContextItem>();
+        var characterCount = 0;
+        foreach (var item in orderedItems.Take(maximumItems))
+        {
+            var contextItem = ToContextItem(item);
+            var estimatedCharacters = contextItem.Type.Length
+                + contextItem.Name.Length
+                + contextItem.SortTitle.Length
+                + contextItem.ContentRating.Length
+                + contextItem.Overview.Length
+                + contextItem.Genres.Sum(value => value.Length)
+                + contextItem.Tags.Sum(value => value.Length);
+            if (result.Count > 0 && characterCount + estimatedCharacters > MaximumContextCharacters)
+            {
+                break;
+            }
+
+            result.Add(contextItem);
+            characterCount += estimatedCharacters;
+        }
+
+        return result.ToArray();
     }
 
     private static void AddCollectionItems(
