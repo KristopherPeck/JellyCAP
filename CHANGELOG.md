@@ -6,9 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [0.1.0.0] - 2026-10-26
+## [0.1.0.0] - 2026-10-27
 
-Beta 1 is the first public test release of JellyCAP for Jellyfin 12.3.
+Beta 1 is the first public test release of JellyCAP for Jellyfin 12.4.
 
 ### Added
 
@@ -29,6 +29,7 @@ Beta 1 is the first public test release of JellyCAP for Jellyfin 12.3.
 - Aligned the project license with Jellyfin's preferred GPL-3.0-only license for public plugins.
 - Added packaged third-party license and attribution notices.
 - Updated Microsoft.Data.Sqlite.Core to 10.0.14.
+- Updated the Jellyfin plugin ABI and server package references to 12.4.
 
 ### Notes
 

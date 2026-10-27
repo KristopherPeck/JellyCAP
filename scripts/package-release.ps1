@@ -107,7 +107,7 @@ foreach ($file in $requiredFiles) {
     Copy-Item -LiteralPath $file.Source -Destination (Join-Path $stageRoot $file.Name)
 }
 
-foreach ($optionalName in @('Jellyfin.Plugin.JellyCAP.pdb', 'Jellyfin.Plugin.JellyCAP.xml')) {
+foreach ($optionalName in @('Jellyfin.Plugin.JellyCAP.xml')) {
     $optionalPath = Join-Path $publishRoot $optionalName
     if (Test-Path -LiteralPath $optionalPath -PathType Leaf) {
         Copy-Item -LiteralPath $optionalPath -Destination (Join-Path $stageRoot $optionalName)
@@ -115,6 +115,7 @@ foreach ($optionalName in @('Jellyfin.Plugin.JellyCAP.pdb', 'Jellyfin.Plugin.Jel
 }
 
 $prohibitedNames = @(
+    'Jellyfin.Plugin.JellyCAP.pdb',
     'e_sqlite3.dll',
     'libe_sqlite3.so',
     'libe_sqlite3.dylib',
@@ -126,7 +127,7 @@ $runtimeDirectories = Get-ChildItem -LiteralPath $stageRoot -Recurse -Directory 
     Where-Object { $_.Name -eq 'runtimes' }
 
 if ($prohibitedFiles -or $runtimeDirectories) {
-    throw 'The staged package contains a prohibited native SQLite runtime or runtimes directory.'
+    throw 'The staged package contains prohibited debug symbols, a native SQLite runtime, or a runtimes directory.'
 }
 
 Compress-Archive -Path (Join-Path $stageRoot '*') -DestinationPath $archivePath -CompressionLevel Optimal

@@ -2,7 +2,7 @@
 
 > AI-assisted collection metadata for Jellyfin, with an approval step before anything is changed.
 
-[![Jellyfin 12.3](https://img.shields.io/badge/Jellyfin-12.3-00A4DC?logo=jellyfin&logoColor=white)](https://jellyfin.org/)
+[![Jellyfin 12.4](https://img.shields.io/badge/Jellyfin-12.4-00A4DC?logo=jellyfin&logoColor=white)](https://jellyfin.org/)
 [![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
 [![Beta](https://img.shields.io/badge/status-beta-orange)](https://github.com/KristopherPeck/JellyCAP/releases)
 [![GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE.md)
@@ -55,7 +55,7 @@ Compare existing and proposed metadata, edit the result, choose individual field
 
 ## Requirements
 
-- Jellyfin Server **12.3**
+- Jellyfin Server **12.4**
 - A host running Jellyfin on a currently supported, security-patched **.NET 10** runtime (10.0.14 or newer for this beta)
 - Administrator access to configure and use the plugin
 - An API key for OpenAI or Anthropic, or access to a compatible endpoint
@@ -188,7 +188,7 @@ The publish directory alone may omit managed SQLite dependencies and should not 
 pwsh .\scripts\package-release.ps1 -Version 0.1.0.0
 ```
 
-The script stages the plugin and required managed SQLite assemblies, rejects native SQLite assets, and creates the release ZIP plus its MD5 checksum under `artifacts`. Compare the generated checksum with `manifest.json` and test that exact ZIP before publishing it.
+The script stages the plugin, XML documentation, and required managed SQLite assemblies; excludes debug symbols and native SQLite assets; and creates the release ZIP plus its MD5 checksum under `artifacts`. Compare the generated checksum with `manifest.json` and test that exact ZIP before publishing it.
 
 The manual **Package beta candidate** workflow creates the same test artifact without publishing a release, creating a tag, or modifying the manifest.
 

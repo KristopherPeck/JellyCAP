@@ -12,7 +12,7 @@ JellyCAP includes or references the following third-party software. These notice
 
 ## Referenced Jellyfin assemblies
 
-JellyCAP references `Jellyfin.Controller` and `Jellyfin.Model` version 12.3.0. These assemblies are licensed under `GPL-3.0-only`, are supplied by the Jellyfin server, and are not redistributed in the JellyCAP release archive.
+JellyCAP references `Jellyfin.Controller` and `Jellyfin.Model` version 12.4.0. These assemblies are licensed under `GPL-3.0-only`, are supplied by the Jellyfin server, and are not redistributed in the JellyCAP release archive.
 
 Source: <https://github.com/jellyfin/jellyfin>
 
