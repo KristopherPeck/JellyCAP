@@ -137,7 +137,7 @@ Queue All skips collections with pending reviews by default. Queued jobs can be 
 
 Custom endpoints must use HTTPS unless they are loopback addresses or the administrator explicitly enables non-loopback HTTP. Provider redirects are disabled. A server-wide maximum of five simultaneous provider requests covers generation workers and connection tests.
 
-API keys may be saved in the plugin data directory or supplied through an environment variable. Environment variables take precedence. Dedicated variables must use the `JELLYCAP_` prefix; `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are accepted only with their matching provider and default endpoint.
+API keys may be saved in the plugin data directory or supplied through an environment variable. Stored keys are written as plaintext JSON and rely on the operating system permissions protecting Jellyfin's plugin data directory; JellyCAP does not encrypt them at rest. If you do not want JellyCAP to write a credential to disk, use an environment variable instead. Environment variables take precedence. Dedicated variables must use the `JELLYCAP_` prefix; `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are accepted only with their matching provider and default endpoint.
 
 ## Privacy and security
 
@@ -153,7 +153,7 @@ Proposals, queue jobs, and compact collection activity are stored in `jellycap.d
 
 On first access after upgrading from the original JSON-backed build, JellyCAP imports `proposals.json` transactionally. After a successful import it renames the source file to `proposals.json.migrated.bak`. An unreadable legacy file is logged and retained rather than discarded.
 
-When upgrading from a build that bundled SQLite, stop Jellyfin and remove the old plugin-local `runtimes` directory, native `e_sqlite3` files, and `SQLitePCLRaw.batteries_v2.dll` before copying the replacement files. Remove these only from the JellyCAP or former JellyAnnotator plugin directory, never from the Jellyfin server installation.
+When upgrading from a build that bundled SQLite, stop Jellyfin and remove the old plugin-local `runtimes` directory, native `e_sqlite3` files, and `SQLitePCLRaw.batteries_v2.dll` before copying the replacement files. Remove these only from the JellyCAP plugin directory, never from the Jellyfin server installation.
 
 ## Troubleshooting
 
@@ -198,7 +198,7 @@ The manual **Package beta candidate** workflow creates the same test artifact wi
 - Report bugs or request features through [GitHub Issues](https://github.com/KristopherPeck/JellyCAP/issues/new/choose)
 - Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md)
 
-Beta testing is especially useful for fresh installs, upgrades from JellyAnnotator, different provider protocols, movie and TV collections, queue recovery after restart, cancellation and retry behavior, stale-metadata conflicts, and retention cleanup.
+Beta testing is especially useful for fresh installs, different provider protocols, movie and TV collections, queue recovery after restart, cancellation and retry behavior, stale-metadata conflicts, and retention cleanup.
 
 ## License
 

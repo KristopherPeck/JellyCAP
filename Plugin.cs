@@ -12,8 +12,6 @@ namespace Jellyfin.Plugin.JellyCAP;
 /// </summary>
 public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
-    private const string LegacyAssemblyName = "Jellyfin.Plugin.JellyAnnotator";
-
     /// <summary>
     /// The stable plugin identifier.
     /// </summary>
@@ -38,10 +36,8 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     /// <inheritdoc />
     public override string Name => "JellyCAP";
 
-    /// <summary>
-    /// Keeps the pre-rename configuration filename so an upgrade retains saved settings.
-    /// </summary>
-    public override string ConfigurationFileName => LegacyAssemblyName + ".xml";
+    /// <inheritdoc />
+    public override string ConfigurationFileName => "Jellyfin.Plugin.JellyCAP.xml";
 
     /// <inheritdoc />
     public override string Description => "Jellyfin Collection Annotation Plugin: generate and review collection overviews, genres, tags, sort titles, content ratings, and community ratings.";
@@ -50,9 +46,7 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     public override Guid Id => PluginId;
 
     /// <summary>
-    /// Resolves a plugin data file while preserving access to data created before the JellyCAP rename.
-    /// New installations use the JellyCAP data directory; upgraded installations continue using an
-    /// existing legacy file until it is migrated to the plugin database.
+    /// Resolves a file in the JellyCAP plugin data directory.
     /// </summary>
     /// <param name="fileName">Plugin-owned file name.</param>
     /// <returns>The active file path.</returns>
@@ -67,9 +61,7 @@ public sealed class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
             throw new ArgumentException("Plugin data files must use a simple file name.", nameof(fileName));
         }
 
-        var currentPath = Path.Combine(DataFolderPath, fileName);
-        var legacyPath = Path.Combine(ApplicationPaths.PluginsPath, LegacyAssemblyName, fileName);
-        return File.Exists(currentPath) || !File.Exists(legacyPath) ? currentPath : legacyPath;
+        return Path.Combine(DataFolderPath, fileName);
     }
 
     /// <inheritdoc />
