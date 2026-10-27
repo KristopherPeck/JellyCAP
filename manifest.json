@@ -12,7 +12,7 @@
         "changelog": "Initial public beta release for Jellyfin 12.4.",
         "targetAbi": "12.4.0.0",
         "sourceUrl": "https://github.com/KristopherPeck/JellyCAP/releases/download/0.1.0.0/JellyCAP_0.1.0.0.zip",
-        "checksum": "0D68A66D88BAEF501A1F7461CE3AD71",
+        "checksum": "0D68A66D88BAEF501A1F7461CE3AD719",
         "timestamp": "2026-10-27T23:21:04Z"
       }
     ]
