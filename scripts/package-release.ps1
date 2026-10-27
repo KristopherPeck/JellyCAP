@@ -132,10 +132,14 @@ if ($prohibitedFiles -or $runtimeDirectories) {
 
 Compress-Archive -Path (Join-Path $stageRoot '*') -DestinationPath $archivePath -CompressionLevel Optimal
 $hash = Get-FileHash -LiteralPath $archivePath -Algorithm MD5
+$releaseTimestamp = [DateTimeOffset]::UtcNow.ToString(
+    "yyyy-MM-dd'T'HH:mm:ss'Z'",
+    [System.Globalization.CultureInfo]::InvariantCulture)
 Set-Content -LiteralPath $checksumPath -Value ("{0}  {1}" -f $hash.Hash, $archiveName) -Encoding ascii
 
 Write-Host "Created $archivePath"
 Write-Host "MD5: $($hash.Hash)"
+Write-Host "Manifest timestamp: $releaseTimestamp"
 
 $manifestPath = Join-Path $repositoryRoot 'manifest.json'
 $manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
@@ -147,5 +151,5 @@ elseif ([string]$manifestVersion.checksum -eq $hash.Hash) {
     Write-Host 'The generated archive checksum matches manifest.json.'
 }
 else {
-    Write-Warning "manifest.json checksum '$($manifestVersion.checksum)' does not match the generated archive. Update it to '$($hash.Hash)' only after the ZIP passes testing."
+    Write-Warning "manifest.json checksum '$($manifestVersion.checksum)' does not match the generated archive. After the ZIP passes testing, update the checksum to '$($hash.Hash)' and the timestamp to '$releaseTimestamp'."
 }

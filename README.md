@@ -188,7 +188,7 @@ The publish directory alone may omit managed SQLite dependencies and should not 
 pwsh .\scripts\package-release.ps1 -Version 0.1.0.0
 ```
 
-The script stages the plugin, XML documentation, and required managed SQLite assemblies; excludes debug symbols and native SQLite assets; and creates the release ZIP plus its MD5 checksum under `artifacts`. Compare the generated checksum with `manifest.json` and test that exact ZIP before publishing it.
+The script stages the plugin, XML documentation, and required managed SQLite assemblies; excludes debug symbols and native SQLite assets; and creates the release ZIP plus its MD5 checksum under `artifacts`. It also prints a manifest-ready UTC timestamp. Test that exact ZIP before copying its checksum and timestamp into `manifest.json` and publishing it.
 
 The manual **Package beta candidate** workflow creates the same test artifact without publishing a release, creating a tag, or modifying the manifest.
 
