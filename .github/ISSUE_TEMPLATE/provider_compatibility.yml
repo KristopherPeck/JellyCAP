@@ -1,0 +1,66 @@
+name: Provider compatibility report
+description: Report behavior with an AI service or OpenAI-compatible endpoint
+title: "[Provider]: "
+labels:
+  - provider-compatibility
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not paste API keys or URLs containing credentials. Use a redacted hostname if the endpoint is private.
+  - type: input
+    id: jellycap_version
+    attributes:
+      label: JellyCAP version
+      placeholder: 0.1.0.0
+    validations:
+      required: true
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Configured protocol
+      options:
+        - OpenAI Responses API
+        - Anthropic Messages API
+        - OpenAI-compatible Chat Completions
+    validations:
+      required: true
+  - type: dropdown
+    id: endpoint_type
+    attributes:
+      label: Endpoint type
+      options:
+        - OpenAI
+        - Anthropic
+        - Local service
+        - Other hosted service
+    validations:
+      required: true
+  - type: input
+    id: provider_model
+    attributes:
+      label: Provider and model
+      description: Do not include a credential or a URL containing one.
+      placeholder: OpenAI / gpt-5-mini
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Observed behavior
+      description: Describe connection-test or generation behavior and any returned status code.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized Jellyfin logs
+      description: Remove API keys, authorization headers, credentials, private URLs, and sensitive metadata.
+      render: shell
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Sensitive-data check
+      options:
+        - label: I removed API keys, credentials, authorization headers, and sensitive media metadata.
+          required: true

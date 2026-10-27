@@ -1,0 +1,20 @@
+[
+  {
+    "guid": "4f8b7813-21dd-49f6-9b60-cbcd31fbac61",
+    "name": "JellyCAP",
+    "description": "Generate reviewable collection metadata using AI providers or locally calculated ratings.",
+    "overview": "AI-assisted collection annotation for Jellyfin",
+    "owner": "KristopherPeck",
+    "category": "Metadata",
+    "versions": [
+      {
+        "version": "0.1.0.0",
+        "changelog": "Initial public beta release.",
+        "targetAbi": "12.3.0.0",
+        "sourceUrl": "https://github.com/KristopherPeck/JellyCAP/releases/download/0.1.0.0/JellyCAP_0.1.0.0.zip",
+        "checksum": "4C6754CA96060B8D94940F402E1CBD59'",
+        "timestamp": "2026-10-26T23:07:42Z"
+      }
+    ]
+  }
+]

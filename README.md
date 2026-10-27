@@ -1,107 +1,205 @@
 # JellyCAP
 
-JellyCAP (Jellyfin Collection Annotation Plugin) is an administrator-only Jellyfin plugin that drafts collection overviews, genres, tags, sort titles, content ratings, and community ratings from the metadata of the items already in each collection. Every generated result is stored as a proposal and must be reviewed before it can change Jellyfin metadata.
+> AI-assisted collection metadata for Jellyfin, with an approval step before anything is changed.
 
-The initial release targets Jellyfin 12.3 and .NET 10.
+[![Jellyfin 12.3](https://img.shields.io/badge/Jellyfin-12.3-00A4DC?logo=jellyfin&logoColor=white)](https://jellyfin.org/)
+[![.NET 10](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/)
+[![Beta](https://img.shields.io/badge/status-beta-orange)](https://github.com/KristopherPeck/JellyCAP/releases)
+[![GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE.md)
 
-## What it does
+JellyCAP (Jellyfin Collection Annotation Plugin) creates reviewable metadata proposals from the items already inside a Jellyfin collection. It can suggest overviews, genres, tags, sort titles, content ratings, and community ratings without immediately overwriting the collection.
 
-- Lists collections in an embedded Jellyfin dashboard.
-- Generates overviews, genres, tags, sort titles, content ratings, and community ratings for selected collections.
-- Community ratings can use a one-decimal average of every eligible rated member or an optional AI suggestion.
-- Supports the OpenAI Responses API, Anthropic Messages API, and OpenAI-compatible Chat Completions endpoints.
-- Lets an administrator independently enable overviews, genres, tags, sort titles, content ratings, and community ratings.
-- Supports replace, merge, and only-if-empty policies as appropriate for each field.
-- Presents current and proposed values side by side and allows edits before approval.
-- Shows the current pending-review count on the JellyCAP dashboard.
-- Paginates collections 50 at a time and pending reviews 25 at a time.
-- Durably queues generation requests from individual collections or every collection matching the current search and activity filter, then runs up to a configurable number concurrently even when the dashboard is closed.
-- Cancels individual or all queued jobs before they start, retries failed collections, and skips collections with pending reviews during Queue All by default.
-- Tracks each collection's successful generation count, last attempt, last success, last application, current queue state, pending-review state, and most recent failure independently of proposal retention.
-- Stays on the collection list after generation by default, with an option to open Pending reviews automatically.
-- Prunes approved and rejected proposal history using configurable age and count limits while preserving every pending proposal.
-- Writes handled provider, storage, configuration, and review failures through Jellyfin's logging system.
-- Enforces English-script output when English is selected, while preserving non-Latin official titles and names copied from the supplied metadata.
-- Detects metadata changed after generation and asks before overwriting it.
-- Retains rejected and applied proposal history according to the configured policy without sending provider credentials to the browser.
-- Stores proposals, durable jobs, and compact per-collection generation history in a plugin-owned SQLite database with indexed status and timestamp fields.
+Every proposal can be inspected and edited by a Jellyfin administrator before selected fields are applied.
 
-## TV collection behavior
+> [!WARNING]
+> JellyCAP is currently beta software. Back up your Jellyfin data and begin with a small, non-critical collection before using **Queue all**.
 
-TV series are treated as terminal collection members. JellyCAP includes the series title and series-level metadata, but it does not recursively collect seasons or episodes. If Jellyfin returns a season or episode as a linked collection member, it is explicitly discarded.
 
-Nested collections are flattened with a cycle guard. Movies and other non-folder media items are included, while unrelated folder containers are skipped.
+## AI development disclosure
 
-## Provider data boundary
+JellyCAP was designed and developed collaboratively by the project maintainer with assistance from OpenAI Codex. AI was used during research, implementation, refactoring, security review, troubleshooting, and documentation. AI-generated suggestions are treated as drafts rather than authoritative results; the maintainer directs the project, reviews changes, and is responsible for validating release candidates before publication.
 
-The provider receives a bounded JSON context containing only:
+This development disclosure is separate from JellyCAP's runtime AI features. Collection metadata is sent only to the provider an administrator explicitly configures, as described in [Privacy and security](#privacy-and-security).
 
-- Collection name and current sort title, content rating, community rating, overview, genres, and tags
-- The calculated child community-rating average and the number of rated eligible members
-- Eligible child type, name, sort title, content rating, community rating, production year, overview, genres, and tags
-- The number of eligible items omitted by the configured limit
 
-File paths, media streams, provider identifiers, user history, and credentials are not included. Child metadata is marked as untrusted data at both the system-instruction and prompt levels to reduce prompt-injection risk. Context is bounded by both the configured item count and a hard 200,000-character ceiling to limit memory use and accidental provider cost.
+## Screenshots
 
-API keys can be stored in the plugin data directory or loaded from an environment variable. The environment variable takes precedence. Dedicated environment variables must use the `JELLYCAP_` prefix; `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are accepted only for their matching provider with its default endpoint. This prevents the plugin from being configured to read unrelated process secrets. The settings API reports only whether a key exists and never returns the key itself.
+### Collection dashboard
 
-Stored keys are plaintext server-side secrets, like many Jellyfin plugin credentials. On Unix systems JellyCAP restricts the secret file to its owner; Windows installations rely on the Jellyfin data directory's ACLs. Protect and back up that directory accordingly, and prefer a dedicated environment variable when the host's secret-management setup supports one.
+Search and filter collections, see prior generation activity, queue individual collections, or queue every collection matching the current filters.
 
-All plugin API routes require Jellyfin's elevated-privilege authorization policy. Provider redirects are disabled, response bodies are capped at 2 MB, provider error text is bounded and API keys are redacted, SQL statements are parameterized, and browser-rendered metadata uses text nodes rather than HTML injection. Non-loopback plaintext HTTP endpoints require an explicit opt-in; use only endpoints trusted to receive the selected collection metadata and provider credential. A server-wide limit of five simultaneous provider requests also covers queue workers and provider connection tests.
+![JellyCAP collection dashboard](screenshots/Screenshot%202026-10-26%20184555.png)
 
-## Review workflow
+### Proposal review
 
-1. Configure the provider and generation preferences in **Dashboard → JellyCAP → Settings**.
-2. Test the provider connection.
-3. Open **Collections** and generate a proposal for one collection.
-4. Review and optionally edit each proposed field under **Pending reviews**.
-5. Select the fields to apply, then approve or reject the proposal.
+Compare existing and proposed metadata, edit the result, choose individual fields, and then approve or reject the proposal.
 
-The pending-review badge updates after generation, approval, rejection, and review refresh. Enable **Open Pending reviews after generating a proposal** in Settings if you prefer the dashboard to switch to the new proposal automatically.
+![JellyCAP proposal review](screenshots/Screenshot%202026-10-26%20184535.png)
 
-The Jellyfin server runs two collection generations concurrently by default, configurable from 1 through 5. Additional selections are stored in SQLite and display their state on the collection card. Queue all collections confirms the complete filtered batch size and respects both the current text search and activity filter. Closing or reloading the dashboard does not stop queued work. A Jellyfin restart returns interrupted running jobs to the queue. Automatic navigation to Pending reviews occurs only when the dashboard session that submitted work remains open and the server queue finishes.
+## Features
 
-Queued jobs use the current saved generation settings and credential when a worker starts them; credentials are never copied into the job table. Changing settings therefore affects jobs that have not started yet.
+- Generates reviewable collection overviews, genres, tags, sort titles, and content ratings
+- Calculates a community-rating average from rated collection members
+- Optionally asks the configured AI provider to suggest a community rating
+- Supports OpenAI, Anthropic, and OpenAI-compatible endpoints
+- Lets administrators edit proposals and apply only selected fields
+- Supports replace, merge, and only-if-empty update policies where appropriate
+- Keeps TV context at the series level; seasons and episodes are excluded
+- Flattens nested collections while protecting against collection cycles
+- Queues one collection or all collections matching the current search and activity filters
+- Continues queued work after the dashboard closes and recovers interrupted jobs after a Jellyfin restart
+- Tracks generation totals, attempts, successes, applications, failures, and pending reviews per collection
+- Detects collection metadata changed after generation before allowing an overwrite
+- Stores proposals and queue state in a plugin-owned SQLite database
+- Logs provider, storage, configuration, queue, and review errors through Jellyfin
 
-Queued collection cards can be cancelled individually, and **Cancel all queued** removes every job that has not started. Running provider requests continue. Failed cards expose **Retry generation**, which creates a new job without resetting the collection's successful-generation history. Queue All skips collections with pending reviews by default; clear that option when intentionally generating another proposal for them.
+## Requirements
 
-Collection activity filters include all, never generated, generated previously, queued, generating, last attempt failed, applied previously, and pending review. Successful generation totals and timestamps are retained after approved or rejected proposal records expire. When upgrading the database, retained proposals seed the initial totals; generations already removed by an older retention policy cannot be reconstructed.
+- Jellyfin Server **12.3**
+- A host running Jellyfin on a currently supported, security-patched **.NET 10** runtime (10.0.14 or newer for this beta)
+- Administrator access to configure and use the plugin
+- An API key for OpenAI or Anthropic, or access to a compatible endpoint
 
-Completed proposal retention applies to approved and rejected proposals as one combined history. The defaults retain completed proposals for 7 days, capped at the newest 100 records. Setting either completed-history limit to 0 removes completed proposals immediately. Pending proposals are never removed by retention.
+## Installation
 
-Jellyfin's supported plugin-page registration does not expose a dynamic badge or admin-home widget hook, so the live count is displayed inside the JellyCAP dashboard. Adding it to Jellyfin's own navigation or admin home would require an unsupported web-client modification.
+### Plugin repository
 
-When a proposal is generated, JellyCAP fingerprints the collection's current sort title, content rating, community rating, overview, genres, and tags. If those fields change before approval, the normal apply request stops with a conflict instead of silently overwriting the newer metadata. The dashboard then offers an explicit force option.
+1. Open **Dashboard → Plugins → Repositories**.
+2. Select **Add**.
+3. Name the repository `JellyCAP` and use this URL:
 
-Content rating suggestions are constrained to exact rating values already present on eligible child items. A provider-supplied value outside that set is discarded and surfaced as a review warning. When no child rating is available, the current collection rating is preserved.
+   ```text
+   https://raw.githubusercontent.com/KristopherPeck/JellyCAP/main/manifest.json
+   ```
 
-## Development and packaging
+4. Open **Catalog** and install JellyCAP from the **Metadata** category.
+5. Restart Jellyfin.
+6. Open **Dashboard → JellyCAP → Settings**.
 
-The project is a conventional Jellyfin server plugin and does not require Node.js or Docker. Restore and publish it on a trusted .NET 10 development workstation:
+### Manual installation
+
+1. Download `JellyCAP_<version>.zip` from the matching [GitHub release](https://github.com/KristopherPeck/JellyCAP/releases).
+2. Extract the archive into a `JellyCAP` directory beneath Jellyfin's plugin directory.
+3. Restart Jellyfin.
+
+Common plugin locations include:
+
+| Installation | Plugin directory |
+| --- | --- |
+| Windows tray install | `%ProgramData%\Jellyfin\Server\plugins` |
+| Windows user install | `%LocalAppData%\jellyfin\plugins` |
+| Common Linux packages | `/var/lib/jellyfin/plugins` |
+
+Do not install a plugin-local `runtimes` directory or native `e_sqlite3` file. JellyCAP uses the native SQLite runtime supplied by Jellyfin.
+
+## Getting started
+
+1. Open **Dashboard → JellyCAP → Settings**.
+2. Choose a provider protocol, endpoint, model, and credential source.
+3. Select which metadata fields JellyCAP should propose.
+4. Configure each field's update behavior and save the settings.
+5. Use **Test connection** to verify the provider.
+6. Open **Collections** and generate a proposal for one collection.
+7. Open **Pending reviews**, inspect the result, and apply only the fields you want.
+
+The server runs two generation jobs concurrently by default. This can be configured from one through five. Additional requests wait in SQLite, so closing or refreshing the browser does not cancel them.
+
+## Metadata behavior
+
+| Field | How JellyCAP proposes it |
+| --- | --- |
+| Overview | AI-generated in the selected language and overview style |
+| Genres | AI-generated from eligible collection-member metadata |
+| Tags | AI-generated from eligible collection-member metadata |
+| Sort title | AI-generated to provide consistent collection sorting |
+| Content rating | AI chooses only from exact ratings already found on eligible members |
+| Community rating | Local one-decimal member average, or an optional AI suggestion |
+
+When English is selected, JellyCAP checks generated prose for unexpected non-Latin text while allowing official names and titles copied from the source metadata. If no eligible child content rating exists, the collection's current rating is preserved.
+
+### TV and nested collections
+
+TV series are terminal members for context generation. JellyCAP includes series-level metadata but explicitly discards seasons and episodes, even if Jellyfin returns them as directly linked collection members.
+
+Nested collections are flattened with a cycle guard. Movies and other eligible media items are included; unrelated folder containers are skipped.
+
+### Review and conflict protection
+
+Generating a proposal does not update Jellyfin metadata. JellyCAP fingerprints the collection's current editable fields when generation begins. If those fields change before approval, the normal apply operation stops and asks for explicit confirmation before overwriting newer metadata.
+
+Queue All skips collections with pending reviews by default. Queued jobs can be cancelled before they start, failed jobs can be retried, and completed proposal history can be pruned by age and count. Pending proposals are never removed by retention.
+
+## Supported providers
+
+- OpenAI Responses API
+- Anthropic Messages API
+- OpenAI-compatible Chat Completions endpoints
+
+Custom endpoints must use HTTPS unless they are loopback addresses or the administrator explicitly enables non-loopback HTTP. Provider redirects are disabled. A server-wide maximum of five simultaneous provider requests covers generation workers and connection tests.
+
+API keys may be saved in the plugin data directory or supplied through an environment variable. Environment variables take precedence. Dedicated variables must use the `JELLYCAP_` prefix; `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are accepted only with their matching provider and default endpoint.
+
+## Privacy and security
+
+JellyCAP sends a bounded metadata context to the configured provider. This can include collection and eligible-member names, overviews, genres, tags, ratings, sort titles, production years, and media types.
+
+It does **not** send file paths, media streams, provider identifiers, Jellyfin user history, or provider credentials as prompt content. Child metadata is treated as untrusted input, request and response sizes are bounded, and credentials are not returned to the browser.
+
+All JellyCAP API routes require Jellyfin's elevated-privilege authorization policy. See [SECURITY.md](SECURITY.md) for private vulnerability reporting and additional security guidance.
+
+## Storage and upgrades
+
+Proposals, queue jobs, and compact collection activity are stored in `jellycap.db` inside the plugin data directory. The database uses transactions, write-ahead logging, parameterized queries, and indexed status and timestamp fields.
+
+On first access after upgrading from the original JSON-backed build, JellyCAP imports `proposals.json` transactionally. After a successful import it renames the source file to `proposals.json.migrated.bak`. An unreadable legacy file is logged and retained rather than discarded.
+
+When upgrading from a build that bundled SQLite, stop Jellyfin and remove the old plugin-local `runtimes` directory, native `e_sqlite3` files, and `SQLitePCLRaw.batteries_v2.dll` before copying the replacement files. Remove these only from the JellyCAP or former JellyAnnotator plugin directory, never from the Jellyfin server installation.
+
+## Troubleshooting
+
+Start with the Jellyfin server log. JellyCAP records handled provider, configuration, queue, proposal, and database failures there.
+
+If Jellyfin disables the plugin while loading `e_sqlite3.dll`, an old native runtime is still present in the plugin directory. Remove the plugin-local `runtimes` directory and reinstall the current release archive.
+
+If Jellyfin reports that `Microsoft.Data.Sqlite` cannot be found, reinstall from the complete JellyCAP release ZIP. Copying only `Jellyfin.Plugin.JellyCAP.dll` is not sufficient because the plugin also needs its managed SQLite assemblies.
+
+For reproducible problems, open a [bug report](https://github.com/KristopherPeck/JellyCAP/issues/new/choose) with JellyCAP and Jellyfin versions, reproduction steps, and sanitized logs. Never attach API keys, authorization headers, private endpoint credentials, or sensitive media metadata.
+
+## Current limitations
+
+- Generation is administrator-initiated; there is no time-based schedule
+- JellyCAP annotates collections, not ordinary library items
+- Image generation is not supported
+- Jellyfin does not expose a supported dynamic badge or admin-home widget hook, so the pending count appears inside the JellyCAP dashboard
+- Provider calls are made directly by the Jellyfin server
+
+## Development
+
+JellyCAP is a conventional .NET Jellyfin server plugin. It does not require Node.js or Docker. Use a security-patched .NET 10 SDK (10.0.14 or newer for this beta).
 
 ```powershell
 dotnet restore
 dotnet publish -c Release
 ```
 
-Copy the published JellyCAP plugin files into a `JellyCAP` directory beneath Jellyfin's plugin directory, then restart Jellyfin. The project enables `CopyLocalLockFileAssemblies` so the output includes the managed `Microsoft.Data.Sqlite`, `SQLitePCLRaw.core`, and `SQLitePCLRaw.provider.e_sqlite3` assemblies required by Jellyfin's isolated plugin loader. It must not include a `runtimes` directory or native `e_sqlite3` library. JellyCAP initializes its managed provider against the native SQLite runtime already installed with Jellyfin. The project includes a publish-time guard that fails if a native SQLite file enters the publish output.
+The publish directory alone may omit managed SQLite dependencies and should not be used as a release archive. To create a complete candidate package on a trusted .NET 10 workstation, run:
 
-When upgrading from a build that bundled SQLite, publish to a clean output directory. Then stop Jellyfin and remove the old plugin `runtimes` directory, any plugin-local native `e_sqlite3` files, and `SQLitePCLRaw.batteries_v2.dll` before copying the replacement files. Keep the newly published managed SQLite assemblies. Remove files only from the JellyCAP/JellyAnnotator plugin directory, not from Jellyfin's server installation. Jellyfin scans plugin DLLs recursively and can otherwise attempt to load a native SQLite library as a managed plugin assembly.
+```powershell
+pwsh .\scripts\package-release.ps1 -Version 0.1.0.0
+```
 
-## Proposal database and migration
+The script stages the plugin and required managed SQLite assemblies, rejects native SQLite assets, and creates the release ZIP plus its MD5 checksum under `artifacts`. Compare the generated checksum with `manifest.json` and test that exact ZIP before publishing it.
 
-Proposals are stored in `jellycap.db` inside the plugin data directory. The database uses write-ahead logging, parameterized queries, transactional updates, and indexes for status, creation time, and completion time. Proposal payloads remain self-contained JSON documents inside individual database rows so additive proposal fields can remain backward-compatible without returning to a single-file store.
+The manual **Package beta candidate** workflow creates the same test artifact without publishing a release, creating a tag, or modifying the manifest.
 
-On the first database access after upgrading, JellyCAP transactionally imports an existing `proposals.json`. Only after the import and migration marker commit successfully does it rename the old file to `proposals.json.migrated.bak`. A malformed or unreadable legacy file stops the migration and is logged rather than being silently discarded. The migration is idempotent and will not re-import the backup on later starts.
+## Contributing and support
 
-## Current scope
+- Review changes and release history in [CHANGELOG.md](CHANGELOG.md)
+- Report bugs or request features through [GitHub Issues](https://github.com/KristopherPeck/JellyCAP/issues/new/choose)
+- Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md)
 
-- Generation is manually initiated from the dashboard, either collection-by-collection or through the durable server-side batch queue; there is no scheduled generation.
-- Proposals are persisted in a dedicated SQLite database; collection and pending-review API responses are paginated.
-- Only administrators can access the plugin API and dashboard.
-- Provider calls are made directly by the Jellyfin server.
-- The initial version does not schedule bulk jobs, generate images, or annotate ordinary library items.
+Beta testing is especially useful for fresh installs, upgrades from JellyAnnotator, different provider protocols, movie and TV collections, queue recovery after restart, cancellation and retry behavior, stale-metadata conflicts, and retention cleanup.
 
 ## License
 
-[MIT](LICENSE)
+JellyCAP is licensed under the [GNU General Public License v3.0 only](LICENSE.md). Third-party component licenses and attribution notices are available in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

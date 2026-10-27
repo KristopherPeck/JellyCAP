@@ -1,0 +1,74 @@
+name: Bug report
+description: Report a reproducible JellyCAP problem
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping test JellyCAP. Never include API keys, authorization headers, credentials, or sensitive media metadata.
+  - type: input
+    id: jellycap_version
+    attributes:
+      label: JellyCAP version
+      placeholder: 0.1.0.0
+    validations:
+      required: true
+  - type: input
+    id: jellyfin_version
+    attributes:
+      label: Jellyfin version
+      placeholder: 12.3.0
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and installation method
+      placeholder: Windows 11, plugin repository installation
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider protocol
+      options:
+        - Not provider-related
+        - OpenAI Responses API
+        - Anthropic Messages API
+        - OpenAI-compatible Chat Completions
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest reliable sequence that demonstrates the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized Jellyfin logs
+      description: Remove API keys, authorization headers, credentials, private URLs, and sensitive metadata.
+      render: shell
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Sensitive-data check
+      options:
+        - label: I removed API keys, credentials, authorization headers, and sensitive media metadata.
+          required: true
