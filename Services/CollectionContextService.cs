@@ -33,6 +33,7 @@ public sealed class CollectionContextService
     /// <param name="search">Optional case-insensitive name filter.</param>
     /// <param name="trackingFilter">Optional durable activity filter.</param>
     /// <param name="activity">Durable generation activity indexed by collection identifier.</param>
+    /// <param name="sortOrder">Collection name ordering.</param>
     /// <param name="startIndex">Zero-based index of the first result.</param>
     /// <param name="limit">Maximum number of results to return.</param>
     /// <returns>A bounded page of matching collections.</returns>
@@ -40,16 +41,19 @@ public sealed class CollectionContextService
         string? search,
         CollectionTrackingFilter trackingFilter,
         IReadOnlyDictionary<Guid, CollectionGenerationActivity> activity,
+        CollectionSortOrder sortOrder,
         int startIndex,
         int limit)
     {
-        var matching = GetCollections()
+        var filtered = GetCollections()
             .Where(boxSet => string.IsNullOrWhiteSpace(search)
                 || (boxSet.Name ?? string.Empty).Contains(search.Trim(), StringComparison.OrdinalIgnoreCase))
             .Where(boxSet => MatchesTrackingFilter(
                 activity.GetValueOrDefault(boxSet.Id) ?? new CollectionGenerationActivity { CollectionId = boxSet.Id },
-                trackingFilter))
-            .OrderBy(boxSet => boxSet.SortName, StringComparer.OrdinalIgnoreCase)
+                trackingFilter));
+        var matching = (sortOrder == CollectionSortOrder.NameDescending
+                ? filtered.OrderByDescending(boxSet => boxSet.Name, StringComparer.OrdinalIgnoreCase)
+                : filtered.OrderBy(boxSet => boxSet.Name, StringComparer.OrdinalIgnoreCase))
             .ToArray();
         var boundedStartIndex = Math.Max(0, startIndex);
         var boundedLimit = Math.Clamp(limit, 1, 100);
@@ -128,6 +132,9 @@ public sealed class CollectionContextService
                 && activity.LastGenerationSucceeded == false,
             CollectionTrackingFilter.Applied => activity.LastAppliedAtUtc.HasValue,
             CollectionTrackingFilter.PendingReview => activity.HasPendingReview,
+            CollectionTrackingFilter.NoChanges => activity.ActiveJobStatus is null
+                && activity.LastGenerationSucceeded == true
+                && activity.LastGenerationHadChanges == false,
             _ => true
         };
     }

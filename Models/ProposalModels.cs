@@ -18,7 +18,27 @@ public enum ProposalStatus
     /// <summary>
     /// The proposal was rejected.
     /// </summary>
-    Rejected
+    Rejected,
+
+    /// <summary>
+    /// The generated values were semantically identical to the collection's current metadata.
+    /// </summary>
+    Unchanged
+}
+
+/// <summary>
+/// Controls proposal list ordering.
+/// </summary>
+public enum ProposalSortOrder
+{
+    /// <summary>Returns the newest proposals first.</summary>
+    Newest,
+
+    /// <summary>Returns collection names from A to Z.</summary>
+    NameAscending,
+
+    /// <summary>Returns collection names from Z to A.</summary>
+    NameDescending
 }
 
 /// <summary>

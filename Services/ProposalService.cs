@@ -32,7 +32,7 @@ public sealed class ProposalService
     /// </summary>
     /// <param name="collectionId">Collection identifier.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The pending proposal.</returns>
+    /// <returns>A pending proposal, or a completed unchanged result when no metadata differs.</returns>
     public async Task<MetadataProposal> GenerateAsync(Guid collectionId, CancellationToken cancellationToken)
     {
         var configuration = SettingsValidator.Validate(
@@ -86,7 +86,33 @@ public sealed class ProposalService
                 : string.Empty
         };
 
+        if (MetadataMatches(original, proposed))
+        {
+            proposal.Status = ProposalStatus.Unchanged;
+            proposal.DecidedAtUtc = DateTimeOffset.UtcNow;
+        }
+
         return proposal;
+    }
+
+    private static bool MetadataMatches(MetadataSnapshot original, GeneratedMetadata proposed)
+    {
+        return NormalizedTextEquals(original.SortTitle, proposed.SortTitle)
+            && NormalizedTextEquals(original.ContentRating, proposed.ContentRating)
+            && original.CommunityRating == proposed.CommunityRating
+            && NormalizedTextEquals(original.Overview, proposed.Overview)
+            && NormalizedSetEquals(original.Genres, proposed.Genres)
+            && NormalizedSetEquals(original.Tags, proposed.Tags);
+    }
+
+    private static bool NormalizedTextEquals(string? left, string? right)
+        => string.Equals(left?.Trim(), right?.Trim(), StringComparison.Ordinal);
+
+    private static bool NormalizedSetEquals(IEnumerable<string> left, IEnumerable<string> right)
+    {
+        var leftSet = new HashSet<string>(left.Select(item => item.Trim()).Where(item => item.Length > 0), StringComparer.OrdinalIgnoreCase);
+        var rightSet = new HashSet<string>(right.Select(item => item.Trim()).Where(item => item.Length > 0), StringComparer.OrdinalIgnoreCase);
+        return leftSet.SetEquals(rightSet);
     }
 
     /// <summary>

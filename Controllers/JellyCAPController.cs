@@ -157,6 +157,7 @@ public sealed class JellyCAPController : ControllerBase
         CancellationToken cancellationToken,
         [FromQuery] string? search = null,
         [FromQuery] CollectionTrackingFilter trackingFilter = CollectionTrackingFilter.All,
+        [FromQuery] CollectionSortOrder sortOrder = CollectionSortOrder.NameAscending,
         [FromQuery] int startIndex = 0,
         [FromQuery] int limit = 50)
     {
@@ -167,6 +168,7 @@ public sealed class JellyCAPController : ControllerBase
                 search,
                 trackingFilter,
                 activity,
+                sortOrder,
                 startIndex,
                 limit));
         }
@@ -323,10 +325,11 @@ public sealed class JellyCAPController : ControllerBase
     public async Task<ActionResult<PagedResult<MetadataProposal>>> GetProposals(
         CancellationToken cancellationToken,
         [FromQuery] ProposalStatus? status = null,
+        [FromQuery] ProposalSortOrder sortOrder = ProposalSortOrder.Newest,
         [FromQuery] int startIndex = 0,
         [FromQuery] int limit = 25)
     {
-        var proposals = await _proposalStore.ListAsync(status, startIndex, limit, cancellationToken).ConfigureAwait(false);
+        var proposals = await _proposalStore.ListAsync(status, sortOrder, startIndex, limit, cancellationToken).ConfigureAwait(false);
         return Ok(proposals);
     }
 

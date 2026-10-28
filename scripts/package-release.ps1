@@ -9,7 +9,10 @@ param(
     [string]$Configuration = 'Release',
 
     [Parameter()]
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+
+    [Parameter()]
+    [switch]$UpdateManifest
 )
 
 $ErrorActionPreference = 'Stop'
@@ -142,14 +145,76 @@ Write-Host "MD5: $($hash.Hash)"
 Write-Host "Manifest timestamp: $releaseTimestamp"
 
 $manifestPath = Join-Path $repositoryRoot 'manifest.json'
-$manifest = Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json
-$manifestVersion = $manifest.versions | Where-Object { $_.version -eq $Version } | Select-Object -First 1
-if ($null -eq $manifestVersion) {
-    Write-Warning "manifest.json has no entry for version $Version."
+$manifestEntries = @(Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json)
+$manifestMatches = @(
+    foreach ($pluginEntry in $manifestEntries) {
+        foreach ($versionEntry in @($pluginEntry.versions)) {
+            if ([string]$versionEntry.version -eq $Version) {
+                [pscustomobject]@{
+                    Plugin = $pluginEntry
+                    Version = $versionEntry
+                }
+            }
+        }
+    }
+)
+
+if ($manifestMatches.Count -eq 0) {
+    $message = "manifest.json has no entry for version $Version."
+    if ($UpdateManifest) {
+        throw "$message Add the release entry before packaging with -UpdateManifest."
+    }
+
+    Write-Warning $message
 }
-elseif ([string]$manifestVersion.checksum -eq $hash.Hash) {
+elseif ($manifestMatches.Count -gt 1) {
+    $message = "manifest.json contains $($manifestMatches.Count) entries for version $Version."
+    if ($UpdateManifest) {
+        throw "$message Refusing to update an ambiguous release."
+    }
+
+    Write-Warning $message
+}
+elseif ($UpdateManifest) {
+    $manifestVersion = $manifestMatches[0].Version
+    $expectedArchiveSuffix = "/$archiveName"
+    $manifestSourceUrl = [string]$manifestVersion.sourceUrl
+    if (-not $manifestSourceUrl.EndsWith($expectedArchiveSuffix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Manifest sourceUrl '$($manifestVersion.sourceUrl)' does not end with '$expectedArchiveSuffix'."
+    }
+
+    $manifestVersion.checksum = $hash.Hash
+    $manifestVersion.timestamp = $releaseTimestamp
+    $manifestJson = ConvertTo-Json -InputObject $manifestEntries -Depth 10
+    $utf8WithoutBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText(
+        $manifestPath,
+        $manifestJson + [System.Environment]::NewLine,
+        $utf8WithoutBom)
+
+    $savedManifest = @(Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json)
+    $savedVersion = @(
+        foreach ($pluginEntry in $savedManifest) {
+            foreach ($versionEntry in @($pluginEntry.versions)) {
+                if ([string]$versionEntry.version -eq $Version) {
+                    $versionEntry
+                }
+            }
+        }
+    )
+    $savedChecksum = if ($savedVersion.Count -eq 1) { [string]$savedVersion[0].checksum } else { '' }
+    $savedTimestamp = if ($savedVersion.Count -eq 1) { [string]$savedVersion[0].timestamp } else { '' }
+    if ($savedVersion.Count -ne 1 -or $savedChecksum -ne $hash.Hash -or $savedTimestamp -ne $releaseTimestamp) {
+        throw 'manifest.json did not pass verification after it was updated.'
+    }
+
+    Write-Host "Updated $manifestPath"
+    Write-Host "Manifest checksum: $($hash.Hash)"
+    Write-Host "Manifest timestamp: $releaseTimestamp"
+}
+elseif ([string]$manifestMatches[0].Version.checksum -eq $hash.Hash) {
     Write-Host 'The generated archive checksum matches manifest.json.'
 }
 else {
-    Write-Warning "manifest.json checksum '$($manifestVersion.checksum)' does not match the generated archive. After the ZIP passes testing, update the checksum to '$($hash.Hash)' and the timestamp to '$releaseTimestamp'."
+    Write-Warning "manifest.json checksum '$($manifestMatches[0].Version.checksum)' does not match the generated archive. When producing the final candidate, rerun with -UpdateManifest and test that generated ZIP before publishing it."
 }

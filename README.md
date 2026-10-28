@@ -48,7 +48,9 @@ Compare existing and proposed metadata, edit the result, choose individual field
 - Flattens nested collections while protecting against collection cycles
 - Queues one collection or all collections matching the current search and activity filters
 - Continues queued work after the dashboard closes and recovers interrupted jobs after a Jellyfin restart
-- Tracks generation totals, attempts, successes, applications, failures, and pending reviews per collection
+- Tracks generation totals, attempts, successes, no-change results, applications, failures, and pending reviews per collection
+- Automatically closes semantically unchanged results instead of adding them to Pending reviews
+- Sorts collection and pending-review pages by collection name
 - Detects collection metadata changed after generation before allowing an overwrite
 - Stores proposals and queue state in a plugin-owned SQLite database
 - Logs provider, storage, configuration, queue, and review errors through Jellyfin
@@ -127,7 +129,7 @@ Nested collections are flattened with a cycle guard. Movies and other eligible m
 
 Generating a proposal does not update Jellyfin metadata. JellyCAP fingerprints the collection's current editable fields when generation begins. If those fields change before approval, the normal apply operation stops and asks for explicit confirmation before overwriting newer metadata.
 
-Queue All skips collections with pending reviews by default. Queued jobs can be cancelled before they start, failed jobs can be retried, and completed proposal history can be pruned by age and count. Pending proposals are never removed by retention.
+Queue All skips collections with pending reviews by default. Queued jobs can be cancelled before they start, failed or unchanged results can be rerun, and completed proposal history can be pruned by age and count. Pending proposals are never removed by retention.
 
 ## Supported providers
 
@@ -188,7 +190,15 @@ The publish directory alone may omit managed SQLite dependencies and should not 
 pwsh .\scripts\package-release.ps1 -Version 0.1.0.0
 ```
 
-The script stages the plugin, XML documentation, and required managed SQLite assemblies; excludes debug symbols and native SQLite assets; and creates the release ZIP plus its MD5 checksum under `artifacts`. It also prints a manifest-ready UTC timestamp. Test that exact ZIP before copying its checksum and timestamp into `manifest.json` and publishing it.
+The script stages the plugin, XML documentation, and required managed SQLite assemblies; excludes debug symbols and native SQLite assets; and creates the release ZIP plus its MD5 checksum under `artifacts`. It also prints a manifest-ready UTC timestamp.
+
+To create the ZIP and update its existing version entry in `manifest.json` in one command, run:
+
+```powershell
+pwsh .\scripts\package-release.ps1 -Version 0.1.0.0 -UpdateManifest
+```
+
+Use `-UpdateManifest` only for the final candidate you intend to upload, then test the generated ZIP before publishing it. The script refuses to update the manifest if the version entry is missing, duplicated, or points to a differently named archive.
 
 The manual **Package beta candidate** workflow creates the same test artifact without publishing a release, creating a tag, or modifying the manifest.
 

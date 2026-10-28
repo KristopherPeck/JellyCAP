@@ -18,7 +18,7 @@
         .ja-panel[hidden] { display: none; }
         .ja-toolbar { display: flex; flex-wrap: wrap; gap: .75em; align-items: flex-end; margin-bottom: 1em; }
         .ja-toolbar .inputContainer { flex: 1 1 18em; margin-bottom: 0; }
-        #collectionSearch, #collectionTrackingFilter, #refreshCollections, #queueAllCollections, #cancelAllQueued { height: 2.75em; min-height: 2.75em; box-sizing: border-box; }
+        #collectionSearch, #collectionTrackingFilter, #collectionSortOrder, #reviewSortOrder, #refreshCollections, #queueAllCollections, #cancelAllQueued, #refreshReviews { height: 2.75em; min-height: 2.75em; box-sizing: border-box; }
         #refreshCollections, #queueAllCollections, #cancelAllQueued { margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
         .ja-tracking-filter { flex: 0 1 16em; margin-bottom: 0; }
         .ja-queue-options { display: flex; flex-wrap: wrap; align-items: center; gap: 1em; margin: -.25em 0 1em; }
@@ -27,7 +27,8 @@
         .ja-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); gap: 1em; }
         .ja-card { border: 1px solid rgba(255,255,255,.16); border-radius: .4em; padding: 1em; background: rgba(255,255,255,.04); }
         .ja-collection-card { display: flex; flex-direction: column; }
-        .ja-collection-card .ja-generation-actions { margin-top: auto; padding-top: 1em; }
+        .ja-collection-card .ja-generation-status { margin-top: auto; padding-top: 1em; }
+        .ja-collection-card .ja-generation-actions { margin-top: 0; padding-top: .25em; }
         .ja-card h3 { margin-top: 0; }
         .ja-muted { opacity: .72; }
         .ja-activity-summary { white-space: pre-line; line-height: 1.45; }
@@ -38,7 +39,7 @@
         .ja-actions .ja-message { align-self: center; margin: 0 0 0 .35em; }
         .ja-generation-actions { flex-wrap: nowrap; align-items: center; }
         .ja-generation-actions > button { flex: 0 0 auto; }
-        .ja-generation-actions .ja-message { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+        .ja-generation-status { margin: 1em 0 0; overflow-wrap: anywhere; }
         .ja-message { min-height: 1.5em; margin: .75em 0; }
         .ja-message.error { color: #ff8a80; }
         .ja-message.success { color: #69f0ae; }
@@ -85,6 +86,14 @@
                             <option value="Failed">Last attempt failed</option>
                             <option value="Applied">Applied previously</option>
                             <option value="PendingReview">Pending review</option>
+                            <option value="NoChanges">Last result: no changes</option>
+                        </select>
+                    </div>
+                    <div class="selectContainer ja-tracking-filter">
+                        <label class="selectLabel" for="collectionSortOrder">Sort</label>
+                        <select is="emby-select" id="collectionSortOrder">
+                            <option value="NameAscending">Name A-Z</option>
+                            <option value="NameDescending">Name Z-A</option>
                         </select>
                     </div>
                     <button is="emby-button" type="button" class="raised button-submit" id="refreshCollections">Refresh</button>
@@ -105,6 +114,14 @@
 
             <section id="reviewsPanel" class="ja-panel" hidden>
                 <div class="ja-toolbar">
+                    <div class="selectContainer ja-tracking-filter">
+                        <label class="selectLabel" for="reviewSortOrder">Sort</label>
+                        <select is="emby-select" id="reviewSortOrder">
+                            <option value="Newest">Newest first</option>
+                            <option value="NameAscending">Name A-Z</option>
+                            <option value="NameDescending">Name Z-A</option>
+                        </select>
+                    </div>
                     <button is="emby-button" type="button" class="raised button-submit" id="refreshReviews">Refresh reviews</button>
                 </div>
                 <div id="reviewsList"></div>
@@ -264,12 +281,12 @@
                         <div class="inputContainer">
                             <label class="inputLabel inputLabelUnfocused" for="completedProposalRetentionDays">Completed proposal retention (days)</label>
                             <input is="emby-input" id="completedProposalRetentionDays" type="number" min="0" max="3650">
-                            <div class="fieldDescription">Applies to both approved and rejected proposals. Use 0 to remove them immediately.</div>
+                            <div class="fieldDescription">Applies to approved, rejected, and no-change results. Use 0 to remove them immediately.</div>
                         </div>
                         <div class="inputContainer">
                             <label class="inputLabel inputLabelUnfocused" for="maximumCompletedProposalHistory">Maximum completed proposal history</label>
                             <input is="emby-input" id="maximumCompletedProposalHistory" type="number" min="0" max="10000">
-                            <div class="fieldDescription">Combined approved and rejected history. Use 0 to keep none. Pending proposals are never removed.</div>
+                            <div class="fieldDescription">Combined approved, rejected, and no-change history. Use 0 to keep none. Pending proposals are never removed.</div>
                         </div>
                         <div class="inputContainer wide">
                             <label class="inputLabel inputLabelUnfocused" for="genreAllowList">Genre vocabulary</label>
@@ -420,6 +437,7 @@
                 var search = value('collectionSearch').trim();
                 return 'Collections?startIndex=' + collectionStartIndex + '&limit=' + collectionPageSize
                     + '&trackingFilter=' + encodeURIComponent(value('collectionTrackingFilter'))
+                    + '&sortOrder=' + encodeURIComponent(value('collectionSortOrder'))
                     + (search ? '&search=' + encodeURIComponent(search) : '');
             }
 
@@ -470,12 +488,14 @@
                         addMetadata(metadata, 'Genres', (collection.genres || []).join(', '));
                         addMetadata(metadata, 'Tags', (collection.tags || []).join(', '));
                         card.appendChild(metadata);
+                        var generationStatus = element('div', 'ja-message ja-generation-status');
+                        generationStatus.setAttribute('data-generation-status', 'true');
+                        card.appendChild(generationStatus);
                         var actions = element('div', 'ja-actions ja-generation-actions');
                         var generate = element('button', 'raised button-submit', 'Generate proposal');
                         generate.setAttribute('is', 'emby-button');
                         generate.setAttribute('data-generation-collection-id', collection.id);
                         generate.type = 'button';
-                        var generationStatus = element('span', 'ja-message');
                         generate.addEventListener('click', function () {
                             enqueueGeneration(collection.id, generate, generationStatus);
                         });
@@ -483,13 +503,13 @@
                         cancel.setAttribute('is', 'emby-button');
                         cancel.setAttribute('data-cancel-generation-collection-id', collection.id);
                         cancel.type = 'button';
-                        cancel.hidden = true;
+                        cancel.disabled = true;
+                        cancel.setAttribute('aria-disabled', 'true');
                         cancel.addEventListener('click', function () {
                             cancelQueuedGeneration(collection.id, cancel, generationStatus);
                         });
                         actions.appendChild(generate);
                         actions.appendChild(cancel);
-                        actions.appendChild(generationStatus);
                         card.appendChild(actions);
                         list.appendChild(card);
                         updateCollectionActivity(card, collection.activity || {});
@@ -544,6 +564,9 @@
                     parts.push('Last applied ' + formatActivityDate(activity.lastAppliedAtUtc));
                 }
                 if (activity.hasPendingReview) { parts.push('Pending review'); }
+                if (!status && activity.lastGenerationSucceeded === true && activity.lastGenerationHadChanges === false) {
+                    parts.push('Last result: No changes suggested');
+                }
                 if (!status && activity.lastGenerationSucceeded === false) { parts.push('Last attempt failed'); }
                 card.querySelector('[data-collection-activity-summary]').textContent = parts.join('\n');
                 var failure = card.querySelector('[data-collection-activity-error]');
@@ -555,7 +578,7 @@
 
                 var button = card.querySelector('[data-generation-collection-id]');
                 var cancelButton = card.querySelector('[data-cancel-generation-collection-id]');
-                var generationStatus = button ? button.parentNode.querySelector('.ja-message') : null;
+                var generationStatus = card.querySelector('[data-generation-status]');
                 if (!button || !cancelButton || !generationStatus) { return; }
                 var wasActive = button.textContent === 'Queuing…'
                     || button.textContent === 'Queued…'
@@ -568,9 +591,9 @@
                     generationStatus.textContent = status === 'running'
                         ? 'The server is generating this proposal.'
                         : 'Waiting in the server queue.';
-                    generationStatus.className = 'ja-message';
-                    cancelButton.hidden = status !== 'queued';
-                    cancelButton.disabled = false;
+                    generationStatus.className = 'ja-message ja-generation-status';
+                    cancelButton.disabled = status !== 'queued';
+                    cancelButton.setAttribute('aria-disabled', String(status !== 'queued'));
                     cancelButton.textContent = 'Cancel';
                     delete cancelButton.dataset.originalLabel;
                 } else if (button.textContent !== 'Queuing…') {
@@ -579,14 +602,17 @@
                     button.setAttribute('aria-busy', 'false');
                     button.textContent = activity.lastGenerationSucceeded === false
                         ? 'Retry generation'
-                        : 'Generate proposal';
+                        : (activity.lastGenerationHadChanges === false ? 'Generate again' : 'Generate proposal');
                     delete button.dataset.originalLabel;
-                    cancelButton.hidden = true;
+                    cancelButton.disabled = true;
+                    cancelButton.setAttribute('aria-disabled', 'true');
                     if (wasActive) {
                         generationStatus.textContent = activity.lastGenerationSucceeded === false
                             ? 'Generation failed. You can retry it.'
-                            : (activity.hasPendingReview ? 'Proposal ready for review.' : '');
-                        generationStatus.className = 'ja-message'
+                            : (activity.lastGenerationHadChanges === false
+                                ? 'No metadata changes were suggested. You can generate again.'
+                                : (activity.hasPendingReview ? 'Proposal ready for review.' : ''));
+                        generationStatus.className = 'ja-message ja-generation-status'
                             + (activity.lastGenerationSucceeded === false ? ' error' : ' success');
                     }
                 }
@@ -668,18 +694,19 @@
             function enqueueGeneration(collectionId, button, status) {
                 setBusy(button, true, 'Queuing…');
                 status.textContent = 'Adding to the server queue…';
+                status.className = 'ja-message ja-generation-status';
                 api('Collections/' + collectionId + '/Generate', { type: 'POST', data: '{}' })
                     .then(function (result) {
                         monitorQueueForReview = monitorQueueForReview || result.queuedCount > 0;
                         status.textContent = result.queuedCount > 0
                             ? 'Waiting in the server queue.'
                             : 'Already queued or generating.';
-                        status.className = 'ja-message success';
+                        status.className = 'ja-message ja-generation-status success';
                         return refreshGenerationState();
                     })
                     .catch(function (error) {
                         status.textContent = errorText(error);
-                        status.className = 'ja-message error';
+                        status.className = 'ja-message ja-generation-status error';
                         setBusy(button, false);
                     });
             }
@@ -692,12 +719,12 @@
                             status.textContent = result.cancelledCount > 0
                                 ? 'Queued generation cancelled.'
                                 : 'This job already started and can no longer be cancelled.';
-                            status.className = 'ja-message' + (result.cancelledCount > 0 ? ' success' : ' error');
+                            status.className = 'ja-message ja-generation-status' + (result.cancelledCount > 0 ? ' success' : ' error');
                         });
                     })
                     .catch(function (error) {
                         status.textContent = errorText(error);
-                        status.className = 'ja-message error';
+                        status.className = 'ja-message ja-generation-status error';
                         setBusy(button, false);
                     });
             }
@@ -816,7 +843,8 @@
                 var list = byId('reviewsList');
                 list.textContent = '';
                 list.appendChild(element('p', 'ja-muted', 'Loading proposals…'));
-                var path = 'Proposals?status=Pending&startIndex=' + reviewStartIndex + '&limit=' + reviewPageSize;
+                var path = 'Proposals?status=Pending&startIndex=' + reviewStartIndex + '&limit=' + reviewPageSize
+                    + '&sortOrder=' + encodeURIComponent(value('reviewSortOrder'));
                 return api(path).then(function (result) {
                     var pending = result.items || [];
                     if (!pending.length && reviewStartIndex > 0 && reviewStartIndex >= result.totalCount) {
@@ -1099,6 +1127,7 @@
                 byId('queueAllCollections').addEventListener('click', queueAllCollections);
                 byId('cancelAllQueued').addEventListener('click', cancelAllQueued);
                 byId('collectionTrackingFilter').addEventListener('change', function () { loadCollections(true); });
+                byId('collectionSortOrder').addEventListener('change', function () { loadCollections(true); });
                 byId('collectionSearch').addEventListener('keydown', function (event) {
                     if (event.key === 'Enter') { event.preventDefault(); loadCollections(true); }
                 });
@@ -1111,6 +1140,7 @@
                     loadCollections(false);
                 });
                 byId('refreshReviews').addEventListener('click', function () { loadReviews(); });
+                byId('reviewSortOrder').addEventListener('change', function () { reviewStartIndex = 0; loadReviews(); });
                 byId('previousReviews').addEventListener('click', function () {
                     reviewStartIndex = Math.max(0, reviewStartIndex - reviewPageSize);
                     loadReviews();
@@ -1131,7 +1161,7 @@
 
             page.addEventListener('viewshow', function () {
                 initialize();
-                loadCollections();
+                showPanel('collectionsPanel');
                 loadPendingReviewCount();
                 loadSettings();
                 loadGenerationQueueStatus();

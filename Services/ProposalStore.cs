@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.JellyCAP.Services;
 /// </summary>
 public sealed class ProposalStore
 {
-    private const int DatabaseVersion = 2;
+    private const int DatabaseVersion = 3;
     private const string LegacyMigrationKey = "legacy-proposals-json-v1";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -42,12 +42,14 @@ public sealed class ProposalStore
     /// Lists proposals, optionally filtered by status.
     /// </summary>
     /// <param name="status">Optional status filter.</param>
+    /// <param name="sortOrder">Proposal ordering.</param>
     /// <param name="startIndex">Zero-based index of the first result.</param>
     /// <param name="limit">Maximum number of results to return.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>A bounded page, newest proposals first.</returns>
+    /// <returns>A bounded page in the requested order.</returns>
     public async Task<PagedResult<MetadataProposal>> ListAsync(
         ProposalStatus? status,
+        ProposalSortOrder sortOrder,
         int startIndex,
         int limit,
         CancellationToken cancellationToken)
@@ -64,20 +66,15 @@ public sealed class ProposalStore
             var items = new List<MetadataProposal>();
 
             await using var command = connection.CreateCommand();
+            var orderBy = sortOrder switch
+            {
+                ProposalSortOrder.NameAscending => "collection_name COLLATE NOCASE ASC, created_at_utc DESC, id DESC",
+                ProposalSortOrder.NameDescending => "collection_name COLLATE NOCASE DESC, created_at_utc DESC, id DESC",
+                _ => "created_at_utc DESC, id DESC"
+            };
             command.CommandText = status.HasValue
-                ? """
-                    SELECT id, payload_json
-                    FROM proposals
-                    WHERE status = $status
-                    ORDER BY created_at_utc DESC, id DESC
-                    LIMIT $limit OFFSET $startIndex;
-                    """
-                : """
-                    SELECT id, payload_json
-                    FROM proposals
-                    ORDER BY created_at_utc DESC, id DESC
-                    LIMIT $limit OFFSET $startIndex;
-                    """;
+                ? $"SELECT id, payload_json FROM proposals WHERE status = $status ORDER BY {orderBy} LIMIT $limit OFFSET $startIndex;"
+                : $"SELECT id, payload_json FROM proposals ORDER BY {orderBy} LIMIT $limit OFFSET $startIndex;";
             if (status.HasValue)
             {
                 command.Parameters.AddWithValue("$status", (int)status.Value);
@@ -563,7 +560,7 @@ public sealed class ProposalStore
             var result = new Dictionary<Guid, CollectionGenerationActivity>();
             await using (var historyCommand = connection.CreateCommand())
             {
-                historyCommand.CommandText = "SELECT collection_id, generation_count, last_attempted_at_utc, last_generated_at_utc, last_applied_at_utc, last_generation_succeeded, last_generation_error FROM collection_generation_history;";
+                historyCommand.CommandText = "SELECT collection_id, generation_count, last_attempted_at_utc, last_generated_at_utc, last_applied_at_utc, last_generation_succeeded, last_generation_error, last_generation_had_changes FROM collection_generation_history;";
                 await using var reader = await historyCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
@@ -576,7 +573,8 @@ public sealed class ProposalStore
                         LastGeneratedAtUtc = ReadTimestamp(reader, 3),
                         LastAppliedAtUtc = ReadTimestamp(reader, 4),
                         LastGenerationSucceeded = reader.IsDBNull(5) ? null : reader.GetInt32(5) != 0,
-                        LastGenerationError = reader.IsDBNull(6) ? string.Empty : reader.GetString(6)
+                        LastGenerationError = reader.IsDBNull(6) ? string.Empty : reader.GetString(6),
+                        LastGenerationHadChanges = reader.IsDBNull(7) ? null : reader.GetInt32(7) != 0
                     };
                 }
             }
@@ -651,17 +649,20 @@ public sealed class ProposalStore
         historyCommand.CommandText = """
             INSERT INTO collection_generation_history (
                 collection_id, generation_count, last_attempted_at_utc,
-                last_generated_at_utc, last_generation_succeeded, last_generation_error)
-            VALUES ($collectionId, 1, $finishedAtUtc, $finishedAtUtc, 1, '')
+                last_generated_at_utc, last_generation_succeeded, last_generation_error,
+                last_generation_had_changes)
+            VALUES ($collectionId, 1, $finishedAtUtc, $finishedAtUtc, 1, '', $hadChanges)
             ON CONFLICT(collection_id) DO UPDATE SET
                 generation_count = collection_generation_history.generation_count + 1,
                 last_attempted_at_utc = excluded.last_attempted_at_utc,
                 last_generated_at_utc = excluded.last_generated_at_utc,
                 last_generation_succeeded = 1,
-                last_generation_error = '';
+                last_generation_error = '',
+                last_generation_had_changes = excluded.last_generation_had_changes;
             """;
         historyCommand.Parameters.AddWithValue("$collectionId", FormatGuid(proposal.CollectionId));
         historyCommand.Parameters.AddWithValue("$finishedAtUtc", FormatTimestamp(finishedAt));
+        historyCommand.Parameters.AddWithValue("$hadChanges", proposal.Status == ProposalStatus.Unchanged ? 0 : 1);
         await historyCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -735,7 +736,8 @@ public sealed class ProposalStore
                     ON CONFLICT(collection_id) DO UPDATE SET
                         last_attempted_at_utc = excluded.last_attempted_at_utc,
                         last_generation_succeeded = 0,
-                        last_generation_error = excluded.last_generation_error;
+                        last_generation_error = excluded.last_generation_error,
+                        last_generation_had_changes = NULL;
                     """;
                 historyCommand.Parameters.AddWithValue("$collectionId", FormatGuid(collectionId));
                 historyCommand.Parameters.AddWithValue("$finishedAtUtc", FormatTimestamp(finishedAt));
@@ -929,7 +931,8 @@ public sealed class ProposalStore
                 CREATE TABLE IF NOT EXISTS proposals (
                     id TEXT NOT NULL PRIMARY KEY,
                     collection_id TEXT NOT NULL,
-                    status INTEGER NOT NULL CHECK (status IN (0, 1, 2)),
+                    collection_name TEXT NOT NULL,
+                    status INTEGER NOT NULL CHECK (status IN (0, 1, 2, 3)),
                     created_at_utc TEXT NOT NULL,
                     decided_at_utc TEXT NULL,
                     payload_json TEXT NOT NULL
@@ -972,11 +975,72 @@ public sealed class ProposalStore
                     last_generated_at_utc TEXT NULL,
                     last_applied_at_utc TEXT NULL,
                     last_generation_succeeded INTEGER NULL,
-                    last_generation_error TEXT NOT NULL DEFAULT ''
+                    last_generation_error TEXT NOT NULL DEFAULT '',
+                    last_generation_had_changes INTEGER NULL
                 );
 
                 """;
             await schemaCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (previousVersion > 0 && previousVersion < 3)
+        {
+            using var migrationTransaction = connection.BeginTransaction();
+            await using var proposalMigrationCommand = connection.CreateCommand();
+            proposalMigrationCommand.Transaction = migrationTransaction;
+            proposalMigrationCommand.CommandText = """
+                DROP INDEX IF EXISTS idx_proposals_status_created;
+                DROP INDEX IF EXISTS idx_proposals_completed_decided;
+                ALTER TABLE proposals RENAME TO proposals_before_v3;
+                CREATE TABLE proposals (
+                    id TEXT NOT NULL PRIMARY KEY,
+                    collection_id TEXT NOT NULL,
+                    collection_name TEXT NOT NULL,
+                    status INTEGER NOT NULL CHECK (status IN (0, 1, 2, 3)),
+                    created_at_utc TEXT NOT NULL,
+                    decided_at_utc TEXT NULL,
+                    payload_json TEXT NOT NULL
+                );
+                INSERT INTO proposals (id, collection_id, collection_name, status, created_at_utc, decided_at_utc, payload_json)
+                SELECT id, collection_id, COALESCE(json_extract(payload_json, '$.collectionName'), ''), status, created_at_utc, decided_at_utc, payload_json
+                FROM proposals_before_v3;
+                DROP TABLE proposals_before_v3;
+                CREATE INDEX idx_proposals_status_created ON proposals (status, created_at_utc DESC);
+                CREATE INDEX idx_proposals_completed_decided ON proposals (status, decided_at_utc DESC, created_at_utc DESC);
+                """;
+            await proposalMigrationCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+            var hasHistoryOutcomeColumn = false;
+            await using (var historyColumnsCommand = connection.CreateCommand())
+            {
+                historyColumnsCommand.Transaction = migrationTransaction;
+                historyColumnsCommand.CommandText = "PRAGMA table_info(collection_generation_history);";
+                await using var reader = await historyColumnsCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    if (string.Equals(reader.GetString(1), "last_generation_had_changes", StringComparison.OrdinalIgnoreCase))
+                    {
+                        hasHistoryOutcomeColumn = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!hasHistoryOutcomeColumn)
+            {
+                await using var historyOutcomeMigrationCommand = connection.CreateCommand();
+                historyOutcomeMigrationCommand.Transaction = migrationTransaction;
+                historyOutcomeMigrationCommand.CommandText = "ALTER TABLE collection_generation_history ADD COLUMN last_generation_had_changes INTEGER NULL;";
+                await historyOutcomeMigrationCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            migrationTransaction.Commit();
+        }
+
+        await using (var proposalNameIndexCommand = connection.CreateCommand())
+        {
+            proposalNameIndexCommand.CommandText = "CREATE INDEX IF NOT EXISTS idx_proposals_status_collection_name ON proposals (status, collection_name COLLATE NOCASE);";
+            await proposalNameIndexCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
         await MigrateLegacyJsonUnsafeAsync(connection, cancellationToken).ConfigureAwait(false);
@@ -1009,7 +1073,7 @@ public sealed class ProposalStore
 
         await using (var setVersionCommand = connection.CreateCommand())
         {
-            setVersionCommand.CommandText = "PRAGMA user_version = 2;";
+            setVersionCommand.CommandText = "PRAGMA user_version = 3;";
             await setVersionCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -1119,6 +1183,7 @@ public sealed class ProposalStore
             INSERT INTO proposals (
                 id,
                 collection_id,
+                collection_name,
                 status,
                 created_at_utc,
                 decided_at_utc,
@@ -1126,12 +1191,14 @@ public sealed class ProposalStore
             VALUES (
                 $id,
                 $collectionId,
+                $collectionName,
                 $status,
                 $createdAtUtc,
                 $decidedAtUtc,
                 $payloadJson)
             ON CONFLICT(id) DO UPDATE SET
                 collection_id = excluded.collection_id,
+                collection_name = excluded.collection_name,
                 status = excluded.status,
                 created_at_utc = excluded.created_at_utc,
                 decided_at_utc = excluded.decided_at_utc,
@@ -1139,6 +1206,7 @@ public sealed class ProposalStore
             """;
         command.Parameters.AddWithValue("$id", FormatGuid(proposal.Id));
         command.Parameters.AddWithValue("$collectionId", FormatGuid(proposal.CollectionId));
+        command.Parameters.AddWithValue("$collectionName", proposal.CollectionName);
         command.Parameters.AddWithValue("$status", (int)proposal.Status);
         command.Parameters.AddWithValue(
             "$createdAtUtc",

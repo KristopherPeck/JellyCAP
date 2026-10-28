@@ -27,7 +27,22 @@ public enum CollectionTrackingFilter
     Applied,
 
     /// <summary>Returns collections that currently have at least one pending proposal.</summary>
-    PendingReview
+    PendingReview,
+
+    /// <summary>Returns collections whose most recent successful generation suggested no changes.</summary>
+    NoChanges
+}
+
+/// <summary>
+/// Controls collection list ordering.
+/// </summary>
+public enum CollectionSortOrder
+{
+    /// <summary>Returns collection names from A to Z.</summary>
+    NameAscending,
+
+    /// <summary>Returns collection names from Z to A.</summary>
+    NameDescending
 }
 
 /// <summary>
@@ -108,6 +123,9 @@ public sealed class CollectionGenerationActivity
 
     /// <summary>Gets or sets whether the most recent completed attempt succeeded.</summary>
     public bool? LastGenerationSucceeded { get; set; }
+
+    /// <summary>Gets or sets whether the most recent successful generation suggested metadata changes.</summary>
+    public bool? LastGenerationHadChanges { get; set; }
 
     /// <summary>Gets or sets the bounded error from the most recent failed attempt.</summary>
     public string LastGenerationError { get; set; } = string.Empty;
