@@ -37,4 +37,5 @@ jobs:
           path: |
             artifacts/JellyCAP_${{ inputs.version }}.zip
             artifacts/JellyCAP_${{ inputs.version }}.md5.txt
+            artifacts/JellyCAP_${{ inputs.version }}.sha256.txt
           if-no-files-found: error

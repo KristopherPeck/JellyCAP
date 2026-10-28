@@ -28,6 +28,10 @@ if ([string]::IsNullOrWhiteSpace($Version)) {
     $Version = $projectVersion
 }
 
+if ($SkipBuild -and $UpdateManifest) {
+    throw '-UpdateManifest requires a fresh build. Remove -SkipBuild when producing the final release candidate.'
+}
+
 if ($Version -ne $projectVersion) {
     throw "Requested version '$Version' does not match project version '$projectVersion'."
 }
@@ -44,6 +48,7 @@ $stageRoot = Join-Path $artifactsRoot (Join-Path 'stage' ("JellyCAP_{0}" -f $Ver
 $archiveName = "JellyCAP_{0}.zip" -f $Version
 $archivePath = Join-Path $artifactsRoot $archiveName
 $checksumPath = Join-Path $artifactsRoot ("JellyCAP_{0}.md5.txt" -f $Version)
+$sha256Path = Join-Path $artifactsRoot ("JellyCAP_{0}.sha256.txt" -f $Version)
 
 function Assert-SafeArtifactPath {
     param(
@@ -60,7 +65,7 @@ function Assert-SafeArtifactPath {
 
 New-Item -ItemType Directory -Path $artifactsRoot -Force | Out-Null
 
-foreach ($path in @($stageRoot, $archivePath, $checksumPath)) {
+foreach ($path in @($stageRoot, $archivePath, $checksumPath, $sha256Path)) {
     Assert-SafeArtifactPath -Path $path
     if (Test-Path -LiteralPath $path) {
         Remove-Item -LiteralPath $path -Recurse -Force
@@ -105,6 +110,12 @@ foreach ($file in $requiredFiles) {
     }
 }
 
+$pluginAssemblyPath = Join-Path $publishRoot 'Jellyfin.Plugin.JellyCAP.dll'
+$pluginAssemblyVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($pluginAssemblyPath).FileVersion
+if ($pluginAssemblyVersion -ne $Version) {
+    throw "Published plugin file version '$pluginAssemblyVersion' does not match package version '$Version'."
+}
+
 New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
 foreach ($file in $requiredFiles) {
     Copy-Item -LiteralPath $file.Source -Destination (Join-Path $stageRoot $file.Name)
@@ -135,13 +146,16 @@ if ($prohibitedFiles -or $runtimeDirectories) {
 
 Compress-Archive -Path (Join-Path $stageRoot '*') -DestinationPath $archivePath -CompressionLevel Optimal
 $hash = Get-FileHash -LiteralPath $archivePath -Algorithm MD5
+$sha256Hash = Get-FileHash -LiteralPath $archivePath -Algorithm SHA256
 $releaseTimestamp = [DateTimeOffset]::UtcNow.ToString(
     "yyyy-MM-dd'T'HH:mm:ss'Z'",
     [System.Globalization.CultureInfo]::InvariantCulture)
 Set-Content -LiteralPath $checksumPath -Value ("{0}  {1}" -f $hash.Hash, $archiveName) -Encoding ascii
+Set-Content -LiteralPath $sha256Path -Value ("{0}  {1}" -f $sha256Hash.Hash, $archiveName) -Encoding ascii
 
 Write-Host "Created $archivePath"
 Write-Host "MD5: $($hash.Hash)"
+Write-Host "SHA-256: $($sha256Hash.Hash)"
 Write-Host "Manifest timestamp: $releaseTimestamp"
 
 $manifestPath = Join-Path $repositoryRoot 'manifest.json'

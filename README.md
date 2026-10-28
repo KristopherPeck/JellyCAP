@@ -141,6 +141,21 @@ Custom endpoints must use HTTPS unless they are loopback addresses or the admini
 
 API keys may be saved in the plugin data directory or supplied through an environment variable. Stored keys are written as plaintext JSON and rely on the operating system permissions protecting Jellyfin's plugin data directory; JellyCAP does not encrypt them at rest. If you do not want JellyCAP to write a credential to disk, use an environment variable instead. Environment variables take precedence. Dedicated variables must use the `JELLYCAP_` prefix; `OPENAI_API_KEY` and `ANTHROPIC_API_KEY` are accepted only with their matching provider and default endpoint.
 
+### API key environment variables
+
+Environment variables belong to the Jellyfin server process, not the browser or the administrator account opening the dashboard. Set the variable before Jellyfin starts, restart the Jellyfin server or service, and enter only its name in JellyCAP's **API key environment variable** setting. Leave the API key field blank; after saving, JellyCAP should report the key source as `environment`. You may then select **Remove stored API key when saving** if an older key was saved on disk.
+
+On Windows:
+
+1. Open **System Properties**, select **Advanced**, then **Environment Variables**.
+2. If Jellyfin is launched interactively, from the tray, or from a normal startup shortcut, add a **User variable** for the Windows account that launches Jellyfin. If Jellyfin runs as a Windows service or under another account, add a **System variable** instead. Use a name such as `JELLYCAP_OPENAI_API_KEY` and place the provider key in its value.
+3. Fully exit and relaunch Jellyfin. For a service installation, restart the Jellyfin service. If the new process still does not receive the variable, restart Windows.
+4. Enter `JELLYCAP_OPENAI_API_KEY` in JellyCAP's environment-variable setting and save.
+
+Avoid putting the key directly in a PowerShell command because it may be retained in shell history. For a Linux systemd installation, prefer a root-controlled `EnvironmentFile` referenced by a Jellyfin service override, restrict that file to the Jellyfin service account, and restart the service after changes.
+
+Environment variables avoid JellyCAP's plaintext `secrets.json`, but they are not encrypted storage. Administrators and sufficiently privileged processes on the Jellyfin host may still inspect the server process environment.
+
 ## Privacy and security
 
 JellyCAP sends a bounded metadata context to the configured provider. This can include collection and eligible-member names, overviews, genres, tags, ratings, sort titles, production years, and media types.
@@ -190,7 +205,7 @@ The publish directory alone may omit managed SQLite dependencies and should not 
 pwsh .\scripts\package-release.ps1 -Version 0.1.0.0
 ```
 
-The script stages the plugin, XML documentation, and required managed SQLite assemblies; excludes debug symbols and native SQLite assets; and creates the release ZIP plus its MD5 checksum under `artifacts`. It also prints a manifest-ready UTC timestamp.
+The script stages the plugin, XML documentation, and required managed SQLite assemblies; verifies the plugin DLL version; excludes debug symbols and native SQLite assets; and creates the release ZIP plus MD5 and SHA-256 checksum files under `artifacts`. It also prints a manifest-ready UTC timestamp.
 
 To create the ZIP and update its existing version entry in `manifest.json` in one command, run:
 
@@ -198,7 +213,7 @@ To create the ZIP and update its existing version entry in `manifest.json` in on
 pwsh .\scripts\package-release.ps1 -Version 0.1.0.0 -UpdateManifest
 ```
 
-Use `-UpdateManifest` only for the final candidate you intend to upload, then test the generated ZIP before publishing it. The script refuses to update the manifest if the version entry is missing, duplicated, or points to a differently named archive.
+Use `-UpdateManifest` only for the final candidate you intend to upload, then test the generated ZIP before publishing it. This option requires a fresh build and cannot be combined with `-SkipBuild`. The script refuses to update the manifest if the version entry is missing, duplicated, points to a differently named archive, or the built DLL version does not match the requested release.
 
 The manual **Package beta candidate** workflow creates the same test artifact without publishing a release, creating a tag, or modifying the manifest.
 

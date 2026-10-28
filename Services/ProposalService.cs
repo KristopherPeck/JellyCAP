@@ -38,6 +38,9 @@ public sealed class ProposalService
         var configuration = SettingsValidator.Validate(
             Plugin.Instance?.Configuration
             ?? throw new InvalidOperationException("JellyCAP is not initialized."));
+        var collection = _collectionContextService.GetCollection(collectionId);
+        var original = MetadataFingerprint.Snapshot(collection);
+        var originalFingerprint = MetadataFingerprint.Compute(original);
         var context = _collectionContextService.BuildContext(collectionId, configuration.MaximumContextItems);
         if (context.Items.Length == 0)
         {
@@ -65,15 +68,13 @@ public sealed class ProposalService
                 ProviderGate.Release();
             }
         }
-        var collection = _collectionContextService.GetCollection(collectionId);
-        var original = MetadataFingerprint.Snapshot(collection);
         var proposed = ApplyPolicies(original, generated, context, configuration);
         var proposal = new MetadataProposal
         {
             CollectionId = collection.Id,
-            CollectionName = collection.Name ?? string.Empty,
+            CollectionName = context.CollectionName,
             Original = original,
-            OriginalFingerprint = MetadataFingerprint.Compute(original),
+            OriginalFingerprint = originalFingerprint,
             FingerprintVersion = MetadataFingerprint.CurrentVersion,
             Proposed = proposed,
             Provider = usesAi ? configuration.ProviderType.ToString() : "Jellyfin ratings",

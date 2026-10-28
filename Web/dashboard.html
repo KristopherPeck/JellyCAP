@@ -160,7 +160,7 @@
                         <div class="inputContainer">
                             <label class="inputLabel inputLabelUnfocused" for="apiKeyEnvironmentVariable">API key environment variable</label>
                             <input is="emby-input" id="apiKeyEnvironmentVariable" type="text" maxlength="200" placeholder="JELLYCAP_API_KEY">
-                            <div class="fieldDescription">Use a dedicated JELLYCAP_ variable. Standard provider variables are accepted only with that provider's default endpoint.</div>
+                            <div class="fieldDescription">The variable must exist in the Jellyfin server process environment before Jellyfin starts. Use a dedicated JELLYCAP_ variable and restart Jellyfin after changing it. Standard provider variables are accepted only with that provider's default endpoint.</div>
                         </div>
                     </div>
 
