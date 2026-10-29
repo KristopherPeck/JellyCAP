@@ -5,6 +5,7 @@
     "description": "Generate reviewable collection metadata using AI providers or locally calculated ratings.",
     "overview": "AI-assisted collection annotation for Jellyfin",
     "owner": "KristopherPeck",
+    "imageUrl": "https://raw.githubusercontent.com/KristopherPeck/JellyCAP/main/assets/title-cards/jellycap-repository.png",
     "category": "Metadata",
     "versions": [
       {
