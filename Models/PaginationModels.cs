@@ -37,3 +37,14 @@ public sealed class ProposalCountResponse
     /// </summary>
     public int Count { get; set; }
 }
+
+/// <summary>
+/// Result of rejecting all pending proposals.
+/// </summary>
+public sealed class BulkProposalRejectionResponse
+{
+    /// <summary>
+    /// Gets or sets the number of proposals rejected.
+    /// </summary>
+    public int RejectedCount { get; set; }
+}

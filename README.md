@@ -43,6 +43,7 @@ Compare existing and proposed metadata, edit the result, choose individual field
 - Optionally asks the configured AI provider to suggest a community rating
 - Supports OpenAI, Anthropic, and OpenAI-compatible endpoints
 - Lets administrators edit proposals and apply only selected fields
+- Rejects individual proposals or all pending proposals without changing collection metadata
 - Supports replace, merge, and only-if-empty update policies where appropriate
 - Keeps TV context at the series level; seasons and episodes are excluded
 - Flattens nested collections while protecting against collection cycles

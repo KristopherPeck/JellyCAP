@@ -155,6 +155,26 @@ public sealed class MetadataApplicationService
         }
     }
 
+    /// <summary>
+    /// Rejects every pending proposal without changing Jellyfin metadata.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of proposals rejected.</returns>
+    public async Task<int> RejectAllPendingAsync(CancellationToken cancellationToken)
+    {
+        await _decisionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await _proposalStore.RejectAllPendingAsync(
+                DateTimeOffset.UtcNow,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _decisionGate.Release();
+        }
+    }
+
     private async Task<MetadataProposal> GetPendingAsync(Guid proposalId, CancellationToken cancellationToken)
     {
         var proposal = await _proposalStore.GetAsync(proposalId, cancellationToken).ConfigureAwait(false)

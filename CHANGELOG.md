@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Bulk rejection for all pending metadata proposals from the review screen.
+
+### Fixed
+
+- Normalized OpenAI provider names and polished dashboard wording.
+
 ## [0.1.0.0] - 2026-10-27
 
 Beta 1 is the first public test release of JellyCAP for Jellyfin 12.4.

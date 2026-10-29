@@ -77,13 +77,13 @@ public sealed class ProposalService
             OriginalFingerprint = originalFingerprint,
             FingerprintVersion = MetadataFingerprint.CurrentVersion,
             Proposed = proposed,
-            Provider = usesAi ? configuration.ProviderType.ToString() : "Jellyfin ratings",
+            Provider = usesAi ? GetProviderDisplayName(configuration.ProviderType) : "Jellyfin ratings",
             Model = usesAi ? configuration.Model : "Average",
             ContextItemCount = context.Items.Length,
             CommunityRatingSource = configuration.GenerateCommunityRating
                 ? configuration.UseAiForCommunityRating
                     ? "AI suggestion"
-                    : $"Average of {context.CommunityRatingItemCount} rated item(s)"
+                    : $"Average of {context.CommunityRatingItemCount} rated {(context.CommunityRatingItemCount == 1 ? "item" : "items")}"
                 : string.Empty
         };
 
@@ -95,6 +95,15 @@ public sealed class ProposalService
 
         return proposal;
     }
+
+    private static string GetProviderDisplayName(AiProviderType providerType)
+        => providerType switch
+        {
+            AiProviderType.OpenAi => "OpenAI",
+            AiProviderType.OpenAiCompatible => "OpenAI-compatible",
+            AiProviderType.Anthropic => "Anthropic",
+            _ => providerType.ToString()
+        };
 
     private static bool MetadataMatches(MetadataSnapshot original, GeneratedMetadata proposed)
     {

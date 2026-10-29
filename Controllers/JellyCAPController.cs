@@ -426,4 +426,21 @@ public sealed class JellyCAPController : ControllerBase
             return BadRequest(new ProblemDetails { Title = "Proposal could not be rejected", Detail = exception.Message });
         }
     }
+
+    /// <summary>
+    /// Rejects every pending proposal without updating Jellyfin metadata.
+    /// </summary>
+    [HttpPost("Proposals/RejectPending")]
+    [ProducesResponseType<BulkProposalRejectionResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<BulkProposalRejectionResponse>> RejectPendingProposals(
+        CancellationToken cancellationToken)
+    {
+        var rejectedCount = await _metadataApplicationService
+            .RejectAllPendingAsync(cancellationToken)
+            .ConfigureAwait(false);
+        _logger.LogInformation(
+            "JellyCAP rejected {ProposalCount} pending proposals in bulk.",
+            rejectedCount);
+        return Ok(new BulkProposalRejectionResponse { RejectedCount = rejectedCount });
+    }
 }

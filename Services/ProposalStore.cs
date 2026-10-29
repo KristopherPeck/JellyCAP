@@ -134,6 +134,57 @@ public sealed class ProposalStore
     }
 
     /// <summary>
+    /// Atomically marks every pending proposal as rejected.
+    /// </summary>
+    /// <param name="decidedAtUtc">Shared rejection timestamp.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of proposals rejected.</returns>
+    public async Task<int> RejectAllPendingAsync(
+        DateTimeOffset decidedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var connection = await OpenConnectionUnsafeAsync(cancellationToken).ConfigureAwait(false);
+            using var transaction = connection.BeginTransaction();
+            var proposals = new List<MetadataProposal>();
+            await using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = "SELECT id, payload_json FROM proposals WHERE status = $status;";
+                command.Parameters.AddWithValue("$status", (int)ProposalStatus.Pending);
+                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    proposals.Add(DeserializeProposal(reader.GetString(0), reader.GetString(1)));
+                }
+            }
+
+            foreach (var proposal in proposals)
+            {
+                proposal.Status = ProposalStatus.Rejected;
+                proposal.DecidedAtUtc = decidedAtUtc;
+                await SaveUnsafeAsync(connection, transaction, proposal, cancellationToken).ConfigureAwait(false);
+            }
+
+            var removed = await ApplyRetentionUnsafeAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
+            transaction.Commit();
+            LogPruned(removed);
+            return proposals.Count;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogStorageFailure(exception, "reject all pending proposals");
+            throw;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
     /// Gets one proposal by identifier.
     /// </summary>
     /// <param name="id">Proposal identifier.</param>

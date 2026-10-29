@@ -18,10 +18,11 @@
         .ja-panel[hidden] { display: none; }
         .ja-toolbar { display: flex; flex-wrap: wrap; gap: .75em; align-items: flex-end; margin-bottom: 1em; }
         .ja-toolbar .inputContainer { flex: 1 1 18em; margin-bottom: 0; }
-        #collectionSearch, #collectionTrackingFilter, #collectionSortOrder, #reviewSortOrder, #refreshCollections, #queueAllCollections, #cancelAllQueued, #refreshReviews { height: 2.75em; min-height: 2.75em; box-sizing: border-box; }
-        #refreshCollections, #queueAllCollections, #cancelAllQueued { margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
+        #collectionSearch, #collectionTrackingFilter, #collectionSortOrder, #reviewSortOrder, #refreshCollections, #queueAllCollections, #cancelAllQueued, #refreshReviews, #rejectAllPending { height: 2.75rem; min-height: 2.75rem; box-sizing: border-box; }
+        #refreshCollections, #queueAllCollections, #cancelAllQueued, #refreshReviews, #rejectAllPending { margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
         .ja-tracking-filter { flex: 0 1 16em; margin-bottom: 0; }
-        .ja-queue-options { display: flex; flex-wrap: wrap; align-items: center; gap: 1em; margin: -.25em 0 1em; }
+        .ja-toolbar-option { display: flex; align-items: center; min-height: 2.75rem; margin: 0; }
+        .ja-toolbar-option .emby-checkbox-label { margin: 0; }
         .ja-pager { display: flex; align-items: center; justify-content: center; gap: .75em; margin: 1.25em 0; }
         .ja-page-info { min-width: 12em; text-align: center; }
         .ja-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); gap: 1em; }
@@ -99,9 +100,9 @@
                     <button is="emby-button" type="button" class="raised button-submit" id="refreshCollections">Refresh</button>
                     <button is="emby-button" type="button" class="raised" id="queueAllCollections">Queue all collections</button>
                     <button is="emby-button" type="button" class="raised" id="cancelAllQueued" disabled>Cancel all queued</button>
-                </div>
-                <div class="ja-queue-options">
-                    <label class="emby-checkbox-label"><input is="emby-checkbox" id="skipPendingReviews" type="checkbox" checked><span>Skip collections with pending reviews when queuing all</span></label>
+                    <div class="ja-toolbar-option">
+                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="skipPendingReviews" type="checkbox" checked><span>Skip collections with pending reviews when queuing all</span></label>
+                    </div>
                 </div>
                 <div id="generationQueueStatus" class="ja-message ja-muted" role="status" aria-live="polite"></div>
                 <div id="collectionsList" class="ja-grid"></div>
@@ -123,6 +124,7 @@
                         </select>
                     </div>
                     <button is="emby-button" type="button" class="raised button-submit" id="refreshReviews">Refresh reviews</button>
+                    <button is="emby-button" type="button" class="raised" id="rejectAllPending" disabled>Reject all pending</button>
                 </div>
                 <div id="reviewsList"></div>
                 <div class="ja-pager" aria-label="Pending review pages">
@@ -274,7 +276,7 @@
                             <input is="emby-input" id="requestTimeoutSeconds" type="number" min="10" max="600">
                         </div>
                         <div class="inputContainer">
-                            <label class="inputLabel inputLabelUnfocused" for="maximumConcurrentGenerations">Concurrent generations per dashboard</label>
+                            <label class="inputLabel inputLabelUnfocused" for="maximumConcurrentGenerations">Concurrent generations per server</label>
                             <input is="emby-input" id="maximumConcurrentGenerations" type="number" min="1" max="5">
                             <div class="fieldDescription">Additional collection requests remain queued. Lower this if your provider enforces strict rate limits.</div>
                         </div>
@@ -290,7 +292,7 @@
                         </div>
                         <div class="inputContainer wide">
                             <label class="inputLabel inputLabelUnfocused" for="genreAllowList">Genre vocabulary</label>
-                            <textarea is="emby-input" id="genreAllowList" rows="4" placeholder="Comma or newline separated; blank uses genres found on child items"></textarea>
+                            <textarea is="emby-input" id="genreAllowList" rows="4" placeholder="Comma- or newline-separated; blank uses genres found on child items"></textarea>
                         </div>
                         <div class="inputContainer wide">
                             <label class="inputLabel inputLabelUnfocused" for="customInstructions">Additional generation instructions</label>
@@ -299,7 +301,7 @@
                     </div>
 
                     <div class="ja-checks">
-                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="openReviewAfterGeneration" type="checkbox"><span>Open Pending reviews after generating a proposal</span></label>
+                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="openReviewAfterGeneration" type="checkbox"><span>Open pending reviews after generating a proposal</span></label>
                         <label class="emby-checkbox-label"><input is="emby-checkbox" id="clearStoredApiKey" type="checkbox"><span>Remove stored API key when saving</span></label>
                     </div>
                     <div class="ja-actions">
@@ -324,6 +326,7 @@
             var reviewPageSize = 25;
             var maximumConcurrentGenerations = 2;
             var collectionTotalCount = 0;
+            var pendingReviewCount = 0;
             var queuedGenerationCount = 0;
             var queueAllLoading = false;
             var generationQueuePollTimer = null;
@@ -363,6 +366,10 @@
             function numberValue(id) { return Number.parseInt(value(id), 10); }
             function listValue(text) {
                 return text.split(/[,\n]/).map(function (item) { return item.trim(); }).filter(Boolean);
+            }
+
+            function countLabel(count, singular, plural) {
+                return count + ' ' + (count === 1 ? singular : (plural || singular + 's'));
             }
 
             function message(text, kind) {
@@ -478,7 +485,7 @@
                         var card = element('article', 'ja-card ja-collection-card');
                         card.setAttribute('data-collection-card-id', collection.id);
                         card.appendChild(element('h3', '', collection.name));
-                        card.appendChild(element('p', 'ja-muted', collection.linkedItemCount + ' directly linked item(s)'));
+                        card.appendChild(element('p', 'ja-muted', countLabel(collection.linkedItemCount, 'directly linked item')));
                         appendCollectionActivity(card);
                         var metadata = element('dl', 'ja-meta');
                         addMetadata(metadata, 'Sort title', collection.sortTitle);
@@ -531,6 +538,16 @@
                     return ['queued', 'running', 'completed', 'failed'][rawValue] || '';
                 }
                 return String(rawValue || '').toLowerCase();
+            }
+
+            function providerDisplayName(rawValue) {
+                var value = String(rawValue || '');
+                var normalized = value.replace(/[^a-z]/gi, '').toLowerCase();
+                if (normalized === 'openai') { return 'OpenAI'; }
+                if (normalized === 'openaicompatible') { return 'OpenAI-compatible'; }
+                if (normalized === 'anthropic') { return 'Anthropic'; }
+                if (normalized === 'jellyfinratings') { return 'Jellyfin ratings'; }
+                return value;
             }
 
             function formatActivityDate(rawValue) {
@@ -658,7 +675,7 @@
                 var search = value('collectionSearch').trim();
                 var trackingFilter = value('collectionTrackingFilter');
                 if (!window.confirm(
-                    'Queue ' + collectionTotalCount + ' collection(s) matching the current search and activity filter?'
+                    'Queue ' + countLabel(collectionTotalCount, 'collection') + ' matching the current search and activity filter?'
                     + ' Jobs continue on the Jellyfin server if this dashboard is closed.'
                     + (checked('skipPendingReviews')
                         ? ' Collections with pending reviews will be skipped.'
@@ -674,7 +691,7 @@
                 api(path, { type: 'POST', data: '{}' })
                     .then(function (result) {
                         monitorQueueForReview = monitorQueueForReview || result.queuedCount > 0;
-                        var summary = result.queuedCount + ' collection(s) added to the server queue.';
+                        var summary = countLabel(result.queuedCount, 'collection') + ' added to the server queue.';
                         if (result.alreadyActiveCount > 0) {
                             summary += ' ' + result.alreadyActiveCount + ' already queued or running.';
                         }
@@ -731,14 +748,14 @@
 
             function cancelAllQueued() {
                 if (queuedGenerationCount <= 0
-                    || !window.confirm('Cancel all ' + queuedGenerationCount + ' queued generation job(s)? Running jobs will continue.')) {
+                    || !window.confirm('Cancel all ' + countLabel(queuedGenerationCount, 'queued generation job') + '? Running jobs will continue.')) {
                     return;
                 }
                 var button = byId('cancelAllQueued');
                 setBusy(button, true, 'Cancelling…');
                 api('GenerationQueue/CancelQueued', { type: 'POST', data: '{}' })
                     .then(function (result) {
-                        message(result.cancelledCount + ' queued generation job(s) cancelled.', 'success');
+                        message(countLabel(result.cancelledCount, 'queued generation job') + ' cancelled.', 'success');
                         return refreshGenerationState();
                     })
                     .catch(function (error) { message(errorText(error), 'error'); })
@@ -794,10 +811,19 @@
             }
 
             function updatePendingReviewCount(count) {
+                pendingReviewCount = count;
                 var badge = byId('pendingReviewCount');
                 badge.textContent = String(count);
                 badge.setAttribute('aria-label', count + (count === 1 ? ' pending review' : ' pending reviews'));
+                syncRejectAllPendingButton();
                 return count;
+            }
+
+            function syncRejectAllPendingButton() {
+                var button = byId('rejectAllPending');
+                if (!button || button.dataset.originalLabel) { return; }
+                button.disabled = pendingReviewCount <= 0;
+                button.setAttribute('aria-disabled', String(button.disabled));
             }
 
             function loadPendingReviewCount() {
@@ -871,7 +897,7 @@
                         var card = element('article', 'ja-card');
                         card.style.marginBottom = '1em';
                         card.appendChild(element('h3', '', proposal.collectionName));
-                        card.appendChild(element('p', 'ja-muted', proposal.provider + ' / ' + proposal.model + ' · ' + proposal.contextItemCount + ' context item(s)'));
+                        card.appendChild(element('p', 'ja-muted', providerDisplayName(proposal.provider) + ' / ' + proposal.model + ' · ' + countLabel(proposal.contextItemCount, 'context item')));
                         if (proposal.communityRatingSource) {
                             card.appendChild(element('p', 'ja-muted', 'Community rating source: ' + proposal.communityRatingSource));
                         }
@@ -955,6 +981,26 @@
                     })
                     .catch(function (error) { message(errorText(error), 'error'); })
                     .finally(function () { setBusy(button, false); });
+            }
+
+            function rejectAllPending(button) {
+                if (pendingReviewCount <= 0
+                    || !window.confirm('Reject all ' + countLabel(pendingReviewCount, 'pending proposal') + '? No collection metadata will be changed.')) {
+                    return;
+                }
+
+                setBusy(button, true, 'Rejecting…');
+                api('Proposals/RejectPending', { type: 'POST', data: '{}' })
+                    .then(function (result) {
+                        reviewStartIndex = 0;
+                        message(countLabel(result.rejectedCount, 'proposal') + ' rejected. No collection metadata was changed.', 'success');
+                        return loadReviews();
+                    })
+                    .catch(function (error) { message(errorText(error), 'error'); })
+                    .finally(function () {
+                        setBusy(button, false);
+                        syncRejectAllPendingButton();
+                    });
             }
 
             function setValue(id, newValue) { byId(id).value = newValue === null || newValue === undefined ? '' : String(newValue); }
@@ -1140,6 +1186,7 @@
                     loadCollections(false);
                 });
                 byId('refreshReviews').addEventListener('click', function () { loadReviews(); });
+                byId('rejectAllPending').addEventListener('click', function () { rejectAllPending(this); });
                 byId('reviewSortOrder').addEventListener('change', function () { reviewStartIndex = 0; loadReviews(); });
                 byId('previousReviews').addEventListener('click', function () {
                     reviewStartIndex = Math.max(0, reviewStartIndex - reviewPageSize);
