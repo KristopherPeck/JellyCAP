@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Configurable server-wide spacing between AI provider requests to help avoid provider rate limits.
+
+### Fixed
+
+- Preserved the pending-review scroll position after approving or rejecting a proposal.
+
 ## [0.2.0.0] - 2026-10-28
 
 ### Added

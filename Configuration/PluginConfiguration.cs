@@ -81,6 +81,12 @@ public sealed class PluginConfiguration : BasePluginConfiguration
     public int MaximumConcurrentGenerations { get; set; } = 2;
 
     /// <summary>
+    /// Gets or sets the minimum delay in seconds between AI provider request start times.
+    /// Zero disables request spacing.
+    /// </summary>
+    public int ProviderRequestDelaySeconds { get; set; }
+
+    /// <summary>
     /// Gets or sets the overview replacement policy.
     /// </summary>
     public OverviewUpdateMode OverviewUpdateMode { get; set; } = OverviewUpdateMode.Replace;
@@ -195,6 +201,7 @@ public sealed class PluginConfiguration : BasePluginConfiguration
             UseAiForCommunityRating = UseAiForCommunityRating,
             OpenReviewAfterGeneration = OpenReviewAfterGeneration,
             MaximumConcurrentGenerations = MaximumConcurrentGenerations,
+            ProviderRequestDelaySeconds = ProviderRequestDelaySeconds,
             OverviewUpdateMode = OverviewUpdateMode,
             GenreUpdateMode = GenreUpdateMode,
             TagUpdateMode = TagUpdateMode,

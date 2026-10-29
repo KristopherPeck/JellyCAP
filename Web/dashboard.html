@@ -281,6 +281,11 @@
                             <div class="fieldDescription">Additional collection requests remain queued. Lower this if your provider enforces strict rate limits.</div>
                         </div>
                         <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="providerRequestDelaySeconds">Minimum delay between AI requests (seconds)</label>
+                            <input is="emby-input" id="providerRequestDelaySeconds" type="number" min="0" max="3600">
+                            <div class="fieldDescription">Spaces provider request start times across the server. Use 0 for no delay. Requests can still overlap when concurrent generations is above 1. Applies to queued generations and connection tests.</div>
+                        </div>
+                        <div class="inputContainer">
                             <label class="inputLabel inputLabelUnfocused" for="completedProposalRetentionDays">Completed proposal retention (days)</label>
                             <input is="emby-input" id="completedProposalRetentionDays" type="number" min="0" max="3650">
                             <div class="fieldDescription">Applies to approved, rejected, and no-change results. Use 0 to remove them immediately.</div>
@@ -899,17 +904,29 @@
                 card.appendChild(wrapper);
             }
 
-            function loadReviews() {
+            function loadReviews(preserveScroll) {
+                var scrollState = preserveScroll
+                    ? { windowTop: window.pageYOffset, pageTop: page.scrollTop }
+                    : null;
+                var restoreScroll = function () {
+                    if (!scrollState) { return; }
+                    window.requestAnimationFrame(function () {
+                        window.scrollTo(0, scrollState.windowTop);
+                        page.scrollTop = scrollState.pageTop;
+                    });
+                };
                 var list = byId('reviewsList');
-                list.textContent = '';
-                list.appendChild(element('p', 'ja-muted', 'Loading proposals…'));
+                if (!preserveScroll) {
+                    list.textContent = '';
+                    list.appendChild(element('p', 'ja-muted', 'Loading proposals…'));
+                }
                 var path = 'Proposals?status=Pending&startIndex=' + reviewStartIndex + '&limit=' + reviewPageSize
                     + '&sortOrder=' + encodeURIComponent(value('reviewSortOrder'));
                 return api(path).then(function (result) {
                     var pending = result.items || [];
                     if (!pending.length && reviewStartIndex > 0 && reviewStartIndex >= result.totalCount) {
                         reviewStartIndex = Math.max(0, reviewStartIndex - reviewPageSize);
-                        return loadReviews();
+                        return loadReviews(preserveScroll);
                     }
 
                     reviewStartIndex = result.startIndex;
@@ -925,6 +942,7 @@
                         result.totalCount === 1 ? 'review' : 'reviews');
                     if (!pending.length) {
                         list.appendChild(element('p', 'ja-muted', 'There are no pending proposals.'));
+                        restoreScroll();
                         return;
                     }
                     pending.forEach(function (proposal) {
@@ -966,6 +984,7 @@
                         card.appendChild(actions);
                         list.appendChild(card);
                     });
+                    restoreScroll();
                 }).catch(function (error) {
                     list.textContent = '';
                     message(errorText(error), 'error');
@@ -994,7 +1013,7 @@
                 api('Proposals/' + proposalId + '/Apply', { type: 'POST', data: JSON.stringify(payload) })
                     .then(function () {
                         message('Approved metadata was saved to the collection.', 'success');
-                        return loadReviews();
+                        return loadReviews(true);
                     })
                     .catch(function (error) {
                         if (error && error.status === 409 && !force && window.confirm('The collection changed after generation. Apply the reviewed fields anyway?')) {
@@ -1011,7 +1030,7 @@
                 api('Proposals/' + proposalId + '/Reject', { type: 'POST', data: '{}' })
                     .then(function () {
                         message('Proposal rejected. No collection metadata was changed.', 'success');
-                        return loadReviews();
+                        return loadReviews(true);
                     })
                     .catch(function (error) { message(errorText(error), 'error'); })
                     .finally(function () { setBusy(button, false); });
@@ -1102,6 +1121,7 @@
                 setChecked('openReviewAfterGeneration', openReviewAfterGeneration);
                 maximumConcurrentGenerations = Math.max(1, Math.min(5, Number(config.maximumConcurrentGenerations) || 2));
                 setValue('maximumConcurrentGenerations', maximumConcurrentGenerations);
+                setValue('providerRequestDelaySeconds', config.providerRequestDelaySeconds);
                 setValue('overviewUpdateMode', enumValue(config.overviewUpdateMode, ['replace', 'onlyifempty']));
                 setValue('genreUpdateMode', enumValue(config.genreUpdateMode, ['merge', 'replace', 'onlyifempty']));
                 setValue('tagUpdateMode', enumValue(config.tagUpdateMode, ['merge', 'replace', 'onlyifempty']));
@@ -1151,6 +1171,7 @@
                         useAiForCommunityRating: checked('useAiForCommunityRating'),
                         openReviewAfterGeneration: checked('openReviewAfterGeneration'),
                         maximumConcurrentGenerations: numberValue('maximumConcurrentGenerations'),
+                        providerRequestDelaySeconds: numberValue('providerRequestDelaySeconds'),
                         overviewUpdateMode: numberValue('overviewUpdateMode'),
                         genreUpdateMode: numberValue('genreUpdateMode'),
                         tagUpdateMode: numberValue('tagUpdateMode'),

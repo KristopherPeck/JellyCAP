@@ -114,6 +114,7 @@ internal static class SettingsValidator
         configuration.MaximumContextItems = Math.Clamp(configuration.MaximumContextItems, 1, 1000);
         configuration.RequestTimeoutSeconds = Math.Clamp(configuration.RequestTimeoutSeconds, 10, 600);
         configuration.MaximumConcurrentGenerations = Math.Clamp(configuration.MaximumConcurrentGenerations, 1, 5);
+        configuration.ProviderRequestDelaySeconds = Math.Clamp(configuration.ProviderRequestDelaySeconds, 0, 3600);
         configuration.CompletedProposalRetentionDays = Math.Clamp(configuration.CompletedProposalRetentionDays, 0, 3650);
         configuration.MaximumCompletedProposalHistory = Math.Clamp(configuration.MaximumCompletedProposalHistory, 0, 10000);
 

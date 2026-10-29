@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Jellyfin.Plugin.JellyCAP.Configuration;
 using Jellyfin.Plugin.JellyCAP.Models;
 
@@ -9,6 +10,8 @@ namespace Jellyfin.Plugin.JellyCAP.Services;
 public sealed class ProposalService
 {
     private static readonly SemaphoreSlim ProviderGate = new(5, 5);
+    private static readonly SemaphoreSlim ProviderRequestStartGate = new(1, 1);
+    private static long _lastProviderRequestTimestamp;
 
     private readonly CollectionContextService _collectionContextService;
     private readonly AiProviderClient _providerClient;
@@ -56,6 +59,9 @@ public sealed class ProposalService
             {
                 var (apiKey, _) = await _secretStore.ResolveAsync(
                     configuration.ApiKeyEnvironmentVariable,
+                    cancellationToken).ConfigureAwait(false);
+                await WaitForProviderRequestDelayAsync(
+                    configuration.ProviderRequestDelaySeconds,
                     cancellationToken).ConfigureAwait(false);
                 generated = await _providerClient.GenerateAsync(
                     context,
@@ -161,6 +167,9 @@ public sealed class ProposalService
                 ]
             };
 
+            await WaitForProviderRequestDelayAsync(
+                configuration.ProviderRequestDelaySeconds,
+                cancellationToken).ConfigureAwait(false);
             _ = await _providerClient.GenerateAsync(context, configuration, apiKey, cancellationToken).ConfigureAwait(false);
         }
         finally
@@ -175,6 +184,32 @@ public sealed class ProposalService
         {
             throw new GenerationCapacityException(
                 "JellyCAP is already processing the maximum of five provider requests. Try again after an active request finishes.");
+        }
+    }
+
+    private static async Task WaitForProviderRequestDelayAsync(
+        int delaySeconds,
+        CancellationToken cancellationToken)
+    {
+        await ProviderRequestStartGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var boundedDelay = Math.Clamp(delaySeconds, 0, 3600);
+            if (boundedDelay > 0 && _lastProviderRequestTimestamp != 0)
+            {
+                var elapsed = Stopwatch.GetElapsedTime(_lastProviderRequestTimestamp);
+                var remaining = TimeSpan.FromSeconds(boundedDelay) - elapsed;
+                if (remaining > TimeSpan.Zero)
+                {
+                    await Task.Delay(remaining, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            _lastProviderRequestTimestamp = Stopwatch.GetTimestamp();
+        }
+        finally
+        {
+            ProviderRequestStartGate.Release();
         }
     }
 
