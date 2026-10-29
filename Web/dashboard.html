@@ -372,6 +372,32 @@
                 return count + ' ' + (count === 1 ? singular : (plural || singular + 's'));
             }
 
+            function restoreSelectPreference(selectId, storageKey) {
+                try {
+                    var storedValue = window.localStorage.getItem(storageKey);
+                    var select = byId(selectId);
+                    var isValid = Array.prototype.some.call(select.options, function (option) {
+                        return option.value === storedValue;
+                    });
+                    if (isValid) { select.value = storedValue; }
+                } catch (_) {
+                    // Storage may be unavailable in privacy-restricted browser contexts.
+                }
+            }
+
+            function saveSelectPreference(selectId, storageKey) {
+                try {
+                    window.localStorage.setItem(storageKey, value(selectId));
+                } catch (_) {
+                    // Sorting still works for this visit when browser storage is unavailable.
+                }
+            }
+
+            function restoreSortPreferences() {
+                restoreSelectPreference('collectionSortOrder', 'JellyCAP.collectionSortOrder');
+                restoreSelectPreference('reviewSortOrder', 'JellyCAP.reviewSortOrder');
+            }
+
             function message(text, kind) {
                 setMessage('globalMessage', text, kind);
             }
@@ -390,6 +416,14 @@
                 if (error && error.responseJSON) {
                     var problem = normalizeResponse(error.responseJSON);
                     return problem.detail || problem.message || problem.title || 'Request failed.';
+                }
+                if (error && error.responseText) {
+                    try {
+                        var response = normalizeResponse(JSON.parse(error.responseText));
+                        return response.detail || response.message || response.title || 'Request failed.';
+                    } catch (_) {
+                        // Ignore non-JSON response bodies and use the normal status fallback.
+                    }
                 }
                 if (error && error.statusText) { return error.statusText; }
                 return error && error.message ? error.message : 'Request failed.';
@@ -1159,13 +1193,14 @@
                 settingsMessage('Testing provider connection…');
                 api('Settings/Test', { type: 'POST', data: '{}' })
                     .then(function (result) { settingsMessage(result.message, result.success ? 'success' : 'error'); })
-                    .catch(function (error) { settingsMessage(errorText(error), 'error'); })
+                    .catch(function (error) { settingsMessage('Provider connection failed: ' + errorText(error), 'error'); })
                     .finally(function () { setBusy(button, false); });
             }
 
             function initialize() {
                 if (loaded) { return; }
                 loaded = true;
+                restoreSortPreferences();
                 page.querySelectorAll('.ja-tab').forEach(function (tab) {
                     tab.addEventListener('click', function () { showPanel(tab.dataset.panel); });
                 });
@@ -1173,7 +1208,10 @@
                 byId('queueAllCollections').addEventListener('click', queueAllCollections);
                 byId('cancelAllQueued').addEventListener('click', cancelAllQueued);
                 byId('collectionTrackingFilter').addEventListener('change', function () { loadCollections(true); });
-                byId('collectionSortOrder').addEventListener('change', function () { loadCollections(true); });
+                byId('collectionSortOrder').addEventListener('change', function () {
+                    saveSelectPreference('collectionSortOrder', 'JellyCAP.collectionSortOrder');
+                    loadCollections(true);
+                });
                 byId('collectionSearch').addEventListener('keydown', function (event) {
                     if (event.key === 'Enter') { event.preventDefault(); loadCollections(true); }
                 });
@@ -1187,7 +1225,11 @@
                 });
                 byId('refreshReviews').addEventListener('click', function () { loadReviews(); });
                 byId('rejectAllPending').addEventListener('click', function () { rejectAllPending(this); });
-                byId('reviewSortOrder').addEventListener('change', function () { reviewStartIndex = 0; loadReviews(); });
+                byId('reviewSortOrder').addEventListener('change', function () {
+                    saveSelectPreference('reviewSortOrder', 'JellyCAP.reviewSortOrder');
+                    reviewStartIndex = 0;
+                    loadReviews();
+                });
                 byId('previousReviews').addEventListener('click', function () {
                     reviewStartIndex = Math.max(0, reviewStartIndex - reviewPageSize);
                     loadReviews();

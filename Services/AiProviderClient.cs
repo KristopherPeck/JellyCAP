@@ -368,7 +368,10 @@ public sealed class AiProviderClient
             ? "Generate genres."
             : "Set genres to an empty array.");
         instructions.AppendLine(configuration.GenerateTags
-            ? "Generate useful discovery tags that describe shared themes, settings, eras, styles, or audiences."
+            ? "Generate useful discovery tags that describe shared themes, subjects, settings, eras, styles, or audiences. "
+                + "Do not use the collection name, franchise name, or title words solely because they appear in collection or item names. "
+                + "A title-related term may be used only when it independently describes a recurring subject, creature, setting, theme, genre-like concept, or audience that is useful for discovery. "
+                + "For example, do not tag a Blade Runner collection as 'Blade Runner'; 'aliens' is appropriate only when alien life is genuinely a recurring subject, not merely because an item is titled Alien."
             : "Set tags to an empty array.");
         instructions.AppendLine(configuration.GenerateSortTitle
             ? "Generate a concise sort title for the collection. Remove leading articles only when natural in the output language, and preserve franchise ordering words or numbers."

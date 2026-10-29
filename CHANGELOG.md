@@ -9,10 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Bulk rejection for all pending metadata proposals from the review screen.
+- Browser-local persistence for the selected collection and pending-review sort orders.
 
 ### Fixed
 
-- Normalized OpenAI provider names and polished dashboard wording.
+- Normalized OpenAI provider names, improved provider-test error details, refined generated-tag guidance, and polished dashboard wording.
 
 ## [0.1.0.0] - 2026-10-27
 
