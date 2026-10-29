@@ -63,6 +63,42 @@ function Assert-SafeArtifactPath {
     }
 }
 
+function ConvertFrom-ManifestJson {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Json
+    )
+
+    $convertFromJson = Get-Command ConvertFrom-Json
+    if ($convertFromJson.Parameters.ContainsKey('DateKind')) {
+        return ConvertFrom-Json -InputObject $Json -DateKind String
+    }
+
+    return ConvertFrom-Json -InputObject $Json
+}
+
+function ConvertTo-ManifestTimestamp {
+    param(
+        [Parameter()]
+        [AllowNull()]
+        [object]$Value
+    )
+
+    if ($Value -is [DateTimeOffset]) {
+        return $Value.ToUniversalTime().ToString(
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            [System.Globalization.CultureInfo]::InvariantCulture)
+    }
+
+    if ($Value -is [DateTime]) {
+        return $Value.ToUniversalTime().ToString(
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            [System.Globalization.CultureInfo]::InvariantCulture)
+    }
+
+    return [string]$Value
+}
+
 New-Item -ItemType Directory -Path $artifactsRoot -Force | Out-Null
 
 foreach ($path in @($stageRoot, $archivePath, $checksumPath, $sha256Path)) {
@@ -159,7 +195,7 @@ Write-Host "SHA-256: $($sha256Hash.Hash)"
 Write-Host "Manifest timestamp: $releaseTimestamp"
 
 $manifestPath = Join-Path $repositoryRoot 'manifest.json'
-$manifestEntries = @(Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json)
+$manifestEntries = @(ConvertFrom-ManifestJson -Json (Get-Content -Raw -LiteralPath $manifestPath))
 $manifestMatches = @(
     foreach ($pluginEntry in $manifestEntries) {
         foreach ($versionEntry in @($pluginEntry.versions)) {
@@ -206,7 +242,7 @@ elseif ($UpdateManifest) {
         $manifestJson + [System.Environment]::NewLine,
         $utf8WithoutBom)
 
-    $savedManifest = @(Get-Content -Raw -LiteralPath $manifestPath | ConvertFrom-Json)
+    $savedManifest = @(ConvertFrom-ManifestJson -Json (Get-Content -Raw -LiteralPath $manifestPath))
     $savedVersion = @(
         foreach ($pluginEntry in $savedManifest) {
             foreach ($versionEntry in @($pluginEntry.versions)) {
@@ -216,10 +252,18 @@ elseif ($UpdateManifest) {
             }
         }
     )
-    $savedChecksum = if ($savedVersion.Count -eq 1) { [string]$savedVersion[0].checksum } else { '' }
-    $savedTimestamp = if ($savedVersion.Count -eq 1) { [string]$savedVersion[0].timestamp } else { '' }
-    if ($savedVersion.Count -ne 1 -or $savedChecksum -ne $hash.Hash -or $savedTimestamp -ne $releaseTimestamp) {
-        throw 'manifest.json did not pass verification after it was updated.'
+    if ($savedVersion.Count -ne 1) {
+        throw "manifest.json verification found $($savedVersion.Count) entries for version $Version; expected exactly one."
+    }
+
+    $savedChecksum = [string]$savedVersion[0].checksum
+    $savedTimestamp = ConvertTo-ManifestTimestamp -Value $savedVersion[0].timestamp
+    if ($savedChecksum -ne $hash.Hash) {
+        throw "manifest.json checksum verification failed. Expected '$($hash.Hash)' but read '$savedChecksum'."
+    }
+
+    if ($savedTimestamp -ne $releaseTimestamp) {
+        throw "manifest.json timestamp verification failed. Expected '$releaseTimestamp' but read '$savedTimestamp'."
     }
 
     Write-Host "Updated $manifestPath"
