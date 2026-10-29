@@ -3,9 +3,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>Jellyfin.Plugin.JellyCAP</RootNamespace>
     <AssemblyName>Jellyfin.Plugin.JellyCAP</AssemblyName>
-    <Version>0.1.0.0</Version>
-    <FileVersion>0.1.0.0</FileVersion>
-    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <Version>0.2.0.0</Version>
+    <FileVersion>0.2.0.0</FileVersion>
+    <AssemblyVersion>0.2.0.0</AssemblyVersion>
     <Authors>KristopherPeck</Authors>
     <PackageLicenseExpression>GPL-3.0-only</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/KristopherPeck/JellyCAP</RepositoryUrl>
