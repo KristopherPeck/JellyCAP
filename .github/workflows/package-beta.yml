@@ -6,7 +6,7 @@ on:
       version:
         description: Four-part version matching the project and manifest
         required: true
-        default: 0.2.0.0
+        default: 0.3.0.0
         type: string
 
 permissions:

@@ -12,7 +12,7 @@ body:
     id: jellycap_version
     attributes:
       label: JellyCAP version
-      placeholder: 0.1.0.0
+      placeholder: 0.3.0.0
     validations:
       required: true
   - type: dropdown

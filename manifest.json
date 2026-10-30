@@ -9,6 +9,14 @@
     "category": "Metadata",
     "versions": [
       {
+        "version": "0.3.0.0",
+        "changelog": "Beta 3 Release for Jellyfin 12.4",
+        "targetAbi": "12.4.0.0",
+        "sourceUrl": "https://github.com/KristopherPeck/JellyCAP/releases/download/0.3.0.0/JellyCAP_0.3.0.0.zip",
+        "checksum": "6451FEE10213E846BAB31238B64FF85C",
+        "timestamp": "2026-10-30T02:28:25Z"
+      },
+      {
         "version": "0.2.0.0",
         "changelog": "Beta 2 Release for Jellyfin 12.4",
         "targetAbi": "12.4.0.0",
