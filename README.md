@@ -7,6 +7,8 @@
 [![Beta](https://img.shields.io/badge/status-beta-orange)](https://github.com/KristopherPeck/JellyCAP/releases)
 [![GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-blue)](LICENSE.md)
 
+![JellyCAP Collection Metadata Enrichment Plugin](assets/title-cards/jellycap-repository.png)
+
 JellyCAP (Jellyfin Collection Annotation Plugin) creates reviewable metadata proposals from the items already inside a Jellyfin collection. It can suggest overviews, genres, tags, sort titles, content ratings, and community ratings without immediately overwriting the collection.
 
 Every proposal can be inspected and edited by a Jellyfin administrator before selected fields are applied.
