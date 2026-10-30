@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Configurable server-wide spacing between AI provider requests to help avoid provider rate limits.
+- Collection filtering for metadata that has never been applied through JellyCAP.
 
 ### Fixed
 

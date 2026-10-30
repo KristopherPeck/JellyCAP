@@ -131,6 +131,7 @@ public sealed class CollectionContextService
             CollectionTrackingFilter.Failed => activity.ActiveJobStatus is null
                 && activity.LastGenerationSucceeded == false,
             CollectionTrackingFilter.Applied => activity.LastAppliedAtUtc.HasValue,
+            CollectionTrackingFilter.NotApplied => !activity.LastAppliedAtUtc.HasValue,
             CollectionTrackingFilter.PendingReview => activity.HasPendingReview,
             CollectionTrackingFilter.NoChanges => activity.ActiveJobStatus is null
                 && activity.LastGenerationSucceeded == true

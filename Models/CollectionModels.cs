@@ -30,7 +30,10 @@ public enum CollectionTrackingFilter
     PendingReview,
 
     /// <summary>Returns collections whose most recent successful generation suggested no changes.</summary>
-    NoChanges
+    NoChanges,
+
+    /// <summary>Returns collections with no metadata previously applied by JellyCAP.</summary>
+    NotApplied
 }
 
 /// <summary>
