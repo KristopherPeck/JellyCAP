@@ -401,6 +401,26 @@ public sealed class JellyCAPController : ControllerBase
     }
 
     /// <summary>
+    /// Applies the generated changes from all pending proposals without forcing stale metadata.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Counts and bounded failure details for the bulk operation.</returns>
+    [HttpPost("Proposals/ApplyPending")]
+    [ProducesResponseType<BulkProposalApprovalResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<BulkProposalApprovalResponse>> ApplyPendingProposals(
+        CancellationToken cancellationToken)
+    {
+        var result = await _metadataApplicationService
+            .ApplyAllPendingAsync(cancellationToken)
+            .ConfigureAwait(false);
+        _logger.LogInformation(
+            "JellyCAP bulk approval applied {AppliedProposalCount} pending proposals and left {FailedProposalCount} pending after failures.",
+            result.AppliedCount,
+            result.FailedCount);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Rejects a pending proposal without updating Jellyfin metadata.
     /// </summary>
     [HttpPost("Proposals/{proposalId:guid}/Reject")]

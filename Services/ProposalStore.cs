@@ -134,6 +134,41 @@ public sealed class ProposalStore
     }
 
     /// <summary>
+    /// Gets a snapshot of every pending proposal for a bulk review decision.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Pending proposals ordered from newest to oldest.</returns>
+    public async Task<MetadataProposal[]> ListPendingAsync(CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var connection = await OpenConnectionUnsafeAsync(cancellationToken).ConfigureAwait(false);
+            await PruneAndLogUnsafeAsync(connection, cancellationToken).ConfigureAwait(false);
+            var proposals = new List<MetadataProposal>();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT id, payload_json FROM proposals WHERE status = $status ORDER BY created_at_utc DESC, id DESC;";
+            command.Parameters.AddWithValue("$status", (int)ProposalStatus.Pending);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                proposals.Add(DeserializeProposal(reader.GetString(0), reader.GetString(1)));
+            }
+
+            return proposals.ToArray();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogStorageFailure(exception, "list pending proposals for bulk approval");
+            throw;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
     /// Atomically marks every pending proposal as rejected.
     /// </summary>
     /// <param name="decidedAtUtc">Shared rejection timestamp.</param>

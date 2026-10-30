@@ -1,5 +1,6 @@
 using Jellyfin.Plugin.JellyCAP.Models;
 using MediaBrowser.Controller.Library;
+using Microsoft.Extensions.Logging;
 
 namespace Jellyfin.Plugin.JellyCAP.Services;
 
@@ -11,16 +12,19 @@ public sealed class MetadataApplicationService
     private readonly SemaphoreSlim _decisionGate = new(1, 1);
     private readonly CollectionContextService _collectionContextService;
     private readonly ProposalStore _proposalStore;
+    private readonly ILogger<MetadataApplicationService> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="MetadataApplicationService"/> class.
     /// </summary>
     public MetadataApplicationService(
         CollectionContextService collectionContextService,
-        ProposalStore proposalStore)
+        ProposalStore proposalStore,
+        ILogger<MetadataApplicationService> logger)
     {
         _collectionContextService = collectionContextService;
         _proposalStore = proposalStore;
+        _logger = logger;
     }
 
     /// <summary>
@@ -173,6 +177,86 @@ public sealed class MetadataApplicationService
         {
             _decisionGate.Release();
         }
+    }
+
+    /// <summary>
+    /// Applies the generated changes from every proposal currently pending.
+    /// Stale or invalid proposals remain pending and do not stop the remaining approvals.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Counts and bounded failure details for the bulk operation.</returns>
+    public async Task<BulkProposalApprovalResponse> ApplyAllPendingAsync(CancellationToken cancellationToken)
+    {
+        var proposals = await _proposalStore.ListPendingAsync(cancellationToken).ConfigureAwait(false);
+        var failures = new List<BulkProposalApprovalFailure>();
+        var failedCount = 0;
+        var appliedCount = 0;
+        foreach (var proposal in proposals)
+        {
+            try
+            {
+                await ApplyAsync(
+                    proposal.Id,
+                    CreateApplyGeneratedRequest(proposal),
+                    cancellationToken).ConfigureAwait(false);
+                appliedCount++;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                failedCount++;
+                _logger.LogError(
+                    exception,
+                    "JellyCAP proposal {ProposalId} could not be applied during bulk approval for collection {CollectionName} ({CollectionId}).",
+                    proposal.Id,
+                    proposal.CollectionName,
+                    proposal.CollectionId);
+                if (failures.Count < 25)
+                {
+                    failures.Add(new BulkProposalApprovalFailure
+                    {
+                        ProposalId = proposal.Id,
+                        CollectionName = proposal.CollectionName,
+                        Message = BoundFailureMessage(exception.Message)
+                    });
+                }
+            }
+        }
+
+        return new BulkProposalApprovalResponse
+        {
+            AppliedCount = appliedCount,
+            FailedCount = failedCount,
+            Failures = failures
+        };
+    }
+
+    private static ApplyProposalRequest CreateApplyGeneratedRequest(MetadataProposal proposal)
+    {
+        return new ApplyProposalRequest
+        {
+            ApplySortTitle = !string.Equals(proposal.Original.SortTitle, proposal.Proposed.SortTitle, StringComparison.Ordinal),
+            ApplyContentRating = !string.Equals(proposal.Original.ContentRating, proposal.Proposed.ContentRating, StringComparison.Ordinal),
+            ApplyCommunityRating = proposal.Original.CommunityRating != proposal.Proposed.CommunityRating,
+            ApplyOverview = !string.Equals(proposal.Original.Overview, proposal.Proposed.Overview, StringComparison.Ordinal),
+            ApplyGenres = !proposal.Original.Genres.SequenceEqual(proposal.Proposed.Genres, StringComparer.Ordinal),
+            ApplyTags = !proposal.Original.Tags.SequenceEqual(proposal.Proposed.Tags, StringComparer.Ordinal),
+            SortTitle = proposal.Proposed.SortTitle,
+            ContentRating = proposal.Proposed.ContentRating,
+            CommunityRating = proposal.Proposed.CommunityRating,
+            Overview = proposal.Proposed.Overview,
+            Genres = proposal.Proposed.Genres,
+            Tags = proposal.Proposed.Tags
+        };
+    }
+
+    private static string BoundFailureMessage(string? message)
+    {
+        var normalized = message?.Trim() ?? "The proposal could not be applied.";
+        return normalized.Length <= 500 ? normalized : normalized[..500].TrimEnd();
     }
 
     private async Task<MetadataProposal> GetPendingAsync(Guid proposalId, CancellationToken cancellationToken)

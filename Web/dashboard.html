@@ -18,8 +18,8 @@
         .ja-panel[hidden] { display: none; }
         .ja-toolbar { display: flex; flex-wrap: wrap; gap: .75em; align-items: flex-end; margin-bottom: 1em; }
         .ja-toolbar .inputContainer { flex: 1 1 18em; margin-bottom: 0; }
-        #collectionSearch, #collectionTrackingFilter, #collectionSortOrder, #reviewSortOrder, #refreshCollections, #queueAllCollections, #cancelAllQueued, #refreshReviews, #rejectAllPending { height: 2.75rem; min-height: 2.75rem; box-sizing: border-box; }
-        #refreshCollections, #queueAllCollections, #cancelAllQueued, #refreshReviews, #rejectAllPending { margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
+        #collectionSearch, #collectionTrackingFilter, #collectionSortOrder, #reviewSortOrder, #refreshCollections, #queueAllCollections, #cancelAllQueued, #refreshReviews, #approveAllPending, #rejectAllPending { height: 2.75rem; min-height: 2.75rem; box-sizing: border-box; }
+        #refreshCollections, #queueAllCollections, #cancelAllQueued, #refreshReviews, #approveAllPending, #rejectAllPending { margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
         .ja-tracking-filter { flex: 0 1 16em; margin-bottom: 0; }
         .ja-toolbar-option { display: flex; align-items: center; min-height: 2.75rem; margin: 0; }
         .ja-toolbar-option .emby-checkbox-label { margin: 0; }
@@ -47,6 +47,8 @@
         .ja-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 1.25em; }
         .ja-settings .wide { grid-column: 1 / -1; }
         .ja-checks { display: flex; flex-wrap: wrap; gap: 1.25em; margin: .75em 0 1.25em; }
+        .ja-generation-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); gap: 1em 1.25em; }
+        .ja-generation-options .emby-checkbox-label { margin: 0; }
         .ja-option { display: inline-flex; align-items: center; gap: .35em; }
         .ja-info { display: inline-flex; align-items: center; justify-content: center; width: 1.25em; height: 1.25em; box-sizing: border-box; border: 1px solid currentColor; border-radius: 50%; cursor: help; font-size: .85em; font-weight: 700; line-height: 1; opacity: .75; }
         .ja-info:hover, .ja-info:focus { opacity: 1; outline: 2px solid #00a4dc; outline-offset: 2px; }
@@ -125,6 +127,7 @@
                         </select>
                     </div>
                     <button is="emby-button" type="button" class="raised button-submit" id="refreshReviews">Refresh reviews</button>
+                    <button is="emby-button" type="button" class="raised" id="approveAllPending" disabled>Approve all pending</button>
                     <button is="emby-button" type="button" class="raised" id="rejectAllPending" disabled>Reject all pending</button>
                 </div>
                 <div id="reviewsList"></div>
@@ -168,7 +171,7 @@
                     </div>
 
                     <p class="fieldDescription">Options labeled “with AI” use the configured provider. The community rating average is calculated locally from eligible collection members.</p>
-                    <div class="ja-checks">
+                    <div class="ja-checks ja-generation-options">
                         <div class="ja-option">
                             <label class="emby-checkbox-label"><input is="emby-checkbox" id="allowInsecureEndpoint" type="checkbox" aria-describedby="helpAllowInsecureEndpoint"><span>Allow non-loopback HTTP endpoint</span></label>
                             <span id="helpAllowInsecureEndpoint" class="ja-info" tabindex="0" title="Allows metadata and any API key to be sent without transport encryption. Loopback HTTP endpoints do not require this option."><span aria-hidden="true">i</span><span class="ja-sr-only">Allows metadata and any API key to be sent without transport encryption. Loopback HTTP endpoints do not require this option.</span></span>
@@ -327,7 +330,7 @@
             var loaded = false;
             var openReviewAfterGeneration = false;
             var collectionStartIndex = 0;
-            var collectionPageSize = 50;
+            var collectionPageSize = 30;
             var reviewStartIndex = 0;
             var reviewPageSize = 25;
             var maximumConcurrentGenerations = 2;
@@ -855,15 +858,17 @@
                 var badge = byId('pendingReviewCount');
                 badge.textContent = String(count);
                 badge.setAttribute('aria-label', count + (count === 1 ? ' pending review' : ' pending reviews'));
-                syncRejectAllPendingButton();
+                syncPendingBulkButtons();
                 return count;
             }
 
-            function syncRejectAllPendingButton() {
-                var button = byId('rejectAllPending');
-                if (!button || button.dataset.originalLabel) { return; }
-                button.disabled = pendingReviewCount <= 0;
-                button.setAttribute('aria-disabled', String(button.disabled));
+            function syncPendingBulkButtons() {
+                ['approveAllPending', 'rejectAllPending'].forEach(function (id) {
+                    var button = byId(id);
+                    if (!button || button.dataset.originalLabel) { return; }
+                    button.disabled = pendingReviewCount <= 0;
+                    button.setAttribute('aria-disabled', String(button.disabled));
+                });
             }
 
             function loadPendingReviewCount() {
@@ -1044,6 +1049,7 @@
                 }
 
                 setBusy(button, true, 'Rejecting…');
+                byId('approveAllPending').disabled = true;
                 api('Proposals/RejectPending', { type: 'POST', data: '{}' })
                     .then(function (result) {
                         reviewStartIndex = 0;
@@ -1053,7 +1059,32 @@
                     .catch(function (error) { message(errorText(error), 'error'); })
                     .finally(function () {
                         setBusy(button, false);
-                        syncRejectAllPendingButton();
+                        syncPendingBulkButtons();
+                    });
+            }
+
+            function approveAllPending(button) {
+                if (pendingReviewCount <= 0
+                    || !window.confirm('Approve all ' + countLabel(pendingReviewCount, 'pending proposal') + ' using their stored generated values? Unsaved edits in the review cards will not be included. Stale proposals will remain pending.')) {
+                    return;
+                }
+
+                setBusy(button, true, 'Approving…');
+                byId('rejectAllPending').disabled = true;
+                api('Proposals/ApplyPending', { type: 'POST', data: '{}' })
+                    .then(function (result) {
+                        reviewStartIndex = 0;
+                        var summary = countLabel(result.appliedCount, 'proposal') + ' applied.';
+                        if (result.failedCount > 0) {
+                            summary += ' ' + countLabel(result.failedCount, 'proposal') + ' could not be applied and remain pending. See the Jellyfin log for details.';
+                        }
+                        message(summary, result.failedCount > 0 ? 'error' : 'success');
+                        return loadReviews();
+                    })
+                    .catch(function (error) { message(errorText(error), 'error'); })
+                    .finally(function () {
+                        setBusy(button, false);
+                        syncPendingBulkButtons();
                     });
             }
 
@@ -1246,6 +1277,7 @@
                     loadCollections(false);
                 });
                 byId('refreshReviews').addEventListener('click', function () { loadReviews(); });
+                byId('approveAllPending').addEventListener('click', function () { approveAllPending(this); });
                 byId('rejectAllPending').addEventListener('click', function () { rejectAllPending(this); });
                 byId('reviewSortOrder').addEventListener('change', function () {
                     saveSelectPreference('reviewSortOrder', 'JellyCAP.reviewSortOrder');

@@ -48,3 +48,39 @@ public sealed class BulkProposalRejectionResponse
     /// </summary>
     public int RejectedCount { get; set; }
 }
+
+/// <summary>
+/// Result of applying all pending proposals.
+/// </summary>
+public sealed class BulkProposalApprovalResponse
+{
+    /// <summary>
+    /// Gets or sets the number of proposals applied successfully.
+    /// </summary>
+    public int AppliedCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the number of proposals that could not be applied and remain pending.
+    /// </summary>
+    public int FailedCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets a bounded list of individual failures.
+    /// </summary>
+    public IReadOnlyList<BulkProposalApprovalFailure> Failures { get; set; } = [];
+}
+
+/// <summary>
+/// One proposal that could not be applied during bulk approval.
+/// </summary>
+public sealed class BulkProposalApprovalFailure
+{
+    /// <summary>Gets or sets the proposal identifier.</summary>
+    public Guid ProposalId { get; set; }
+
+    /// <summary>Gets or sets the collection name.</summary>
+    public string CollectionName { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the bounded failure message.</summary>
+    public string Message { get; set; } = string.Empty;
+}

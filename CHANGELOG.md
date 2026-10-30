@@ -10,10 +10,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Configurable server-wide spacing between AI provider requests to help avoid provider rate limits.
 - Collection filtering for metadata that has never been applied through JellyCAP.
+- Bulk approval for all pending proposals, with stale and failed proposals left pending for review.
+
+### Changed
+
+- Reduced collection dashboard pages to 30 entries so the three-column layout ends on a complete row.
 
 ### Fixed
 
 - Preserved the pending-review scroll position after approving or rejecting a proposal.
+- Aligned generation checkboxes into consistent responsive columns.
 
 ## [0.2.0.0] - 2026-10-28
 
