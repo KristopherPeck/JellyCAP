@@ -4,4 +4,4 @@ artifacts/
 *.user
 *.suo
 TestResults/
-
+docs/
