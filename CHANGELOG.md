@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.4.0.0] - 2026-10-30
+
+### Changed
+
+- Restyled dashboard section navigation to match Jellyfin's understated tab-bar pattern.
+
+### Fixed
+
+- Prevented the release script from wrapping single-plugin manifests in PowerShell array metadata.
+
 ## [0.3.0.0] - 2026-10-29
 
 ### Added
@@ -65,7 +75,8 @@ Beta 1 is the first public test release of JellyCAP for Jellyfin 12.4.
 - This is beta software. Back up Jellyfin metadata and test with a small number of collections before using Queue All.
 - Generated metadata is always presented for administrator review before it can be applied.
 
-[Unreleased]: https://github.com/KristopherPeck/JellyCAP/compare/0.3.0.0...HEAD
+[Unreleased]: https://github.com/KristopherPeck/JellyCAP/compare/0.4.0.0...HEAD
+[0.4.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.4.0.0
 [0.3.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.3.0.0
 [0.2.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.2.0.0
 [0.1.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.1.0.0

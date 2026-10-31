@@ -70,11 +70,39 @@ function ConvertFrom-ManifestJson {
     )
 
     $convertFromJson = Get-Command ConvertFrom-Json
+    $parsed = $null
     if ($convertFromJson.Parameters.ContainsKey('DateKind')) {
-        return ConvertFrom-Json -InputObject $Json -DateKind String
+        $parsed = ConvertFrom-Json -InputObject $Json -DateKind String
+    }
+    else {
+        $parsed = ConvertFrom-Json -InputObject $Json
     }
 
-    return ConvertFrom-Json -InputObject $Json
+    # Emit root-array entries individually. Returning the ConvertFrom-Json command
+    # directly wraps a single-element JSON array as { value, Count } on some
+    # PowerShell versions when ConvertTo-Json later receives it via -InputObject.
+    foreach ($entry in $parsed) {
+        Write-Output $entry
+    }
+}
+
+function Assert-ManifestShape {
+    param(
+        [Parameter(Mandatory)]
+        [object[]]$Entries
+    )
+
+    if ($Entries.Count -eq 0) {
+        throw 'manifest.json must contain at least one plugin entry.'
+    }
+
+    foreach ($entry in $Entries) {
+        $hasGuid = $null -ne $entry -and $entry.PSObject.Properties.Name -contains 'guid'
+        $hasVersions = $null -ne $entry -and $entry.PSObject.Properties.Name -contains 'versions'
+        if (-not $hasGuid -or -not $hasVersions) {
+            throw 'manifest.json root entries must be plugin objects containing guid and versions properties.'
+        }
+    }
 }
 
 function ConvertTo-ManifestTimestamp {
@@ -196,6 +224,7 @@ Write-Host "Manifest timestamp: $releaseTimestamp"
 
 $manifestPath = Join-Path $repositoryRoot 'manifest.json'
 $manifestEntries = @(ConvertFrom-ManifestJson -Json (Get-Content -Raw -LiteralPath $manifestPath))
+Assert-ManifestShape -Entries $manifestEntries
 $manifestMatches = @(
     foreach ($pluginEntry in $manifestEntries) {
         foreach ($versionEntry in @($pluginEntry.versions)) {
@@ -243,6 +272,7 @@ elseif ($UpdateManifest) {
         $utf8WithoutBom)
 
     $savedManifest = @(ConvertFrom-ManifestJson -Json (Get-Content -Raw -LiteralPath $manifestPath))
+    Assert-ManifestShape -Entries $savedManifest
     $savedVersion = @(
         foreach ($pluginEntry in $savedManifest) {
             foreach ($versionEntry in @($pluginEntry.versions)) {

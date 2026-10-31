@@ -12,8 +12,11 @@
      data-require="emby-button,emby-checkbox,emby-input,emby-select">
     <style>
         .ja-page { max-width: 1100px; }
-        .ja-tabs { display: flex; flex-wrap: wrap; gap: .5em; margin: 1.25em 0; }
-        .ja-tab[aria-selected="true"] { background: #00a4dc; color: #fff; }
+        .ja-tabs { display: flex; align-items: stretch; margin: 1.25em 0; overflow-x: auto; border-bottom: 1px solid rgba(255,255,255,.16); }
+        .ja-tab { flex: 0 0 auto; margin: 0; padding: .85em 1.1em .75em; border: 0; border-bottom: 3px solid transparent; background: transparent; color: inherit; cursor: pointer; font: inherit; opacity: .72; white-space: nowrap; }
+        .ja-tab:hover { background: rgba(255,255,255,.04); opacity: 1; }
+        .ja-tab:focus-visible { outline: 2px solid #00a4dc; outline-offset: -2px; }
+        .ja-tab[aria-selected="true"] { border-bottom-color: #00a4dc; background: rgba(0,164,220,.08); opacity: 1; }
         .ja-count { display: inline-flex; align-items: center; justify-content: center; min-width: 1.45em; height: 1.45em; box-sizing: border-box; margin-left: .35em; padding: 0 .35em; border-radius: 1em; background: rgba(255,255,255,.2); font-size: .9em; font-weight: 600; }
         .ja-panel[hidden] { display: none; }
         .ja-toolbar { display: flex; flex-wrap: wrap; gap: .75em; align-items: flex-end; margin-bottom: 1em; }
@@ -65,14 +68,14 @@
             <p class="ja-muted">Generate reviewable collection metadata from the collection's own contents. TV context stays at show level; seasons and episodes are excluded.</p>
 
             <div class="ja-tabs" role="tablist" aria-label="JellyCAP sections">
-                <button is="emby-button" type="button" class="raised ja-tab" data-panel="collectionsPanel" aria-selected="true">Collections</button>
-                <button is="emby-button" type="button" class="raised ja-tab" data-panel="reviewsPanel" aria-selected="false">Pending reviews <span id="pendingReviewCount" class="ja-count" aria-label="0 pending reviews">0</span></button>
-                <button is="emby-button" type="button" class="raised ja-tab" data-panel="settingsPanel" aria-selected="false">Settings</button>
+                <button type="button" class="ja-tab" id="collectionsTab" role="tab" data-panel="collectionsPanel" aria-controls="collectionsPanel" aria-selected="true">Collections</button>
+                <button type="button" class="ja-tab" id="reviewsTab" role="tab" data-panel="reviewsPanel" aria-controls="reviewsPanel" aria-selected="false">Pending reviews <span id="pendingReviewCount" class="ja-count" aria-label="0 pending reviews">0</span></button>
+                <button type="button" class="ja-tab" id="settingsTab" role="tab" data-panel="settingsPanel" aria-controls="settingsPanel" aria-selected="false">Settings</button>
             </div>
 
             <div id="globalMessage" class="ja-message" role="status" aria-live="polite"></div>
 
-            <section id="collectionsPanel" class="ja-panel">
+            <section id="collectionsPanel" class="ja-panel" role="tabpanel" aria-labelledby="collectionsTab">
                 <div class="ja-toolbar">
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="collectionSearch">Search collections</label>
@@ -116,7 +119,7 @@
                 </div>
             </section>
 
-            <section id="reviewsPanel" class="ja-panel" hidden>
+            <section id="reviewsPanel" class="ja-panel" role="tabpanel" aria-labelledby="reviewsTab" hidden>
                 <div class="ja-toolbar">
                     <div class="selectContainer ja-tracking-filter">
                         <label class="selectLabel" for="reviewSortOrder">Sort</label>
@@ -138,7 +141,7 @@
                 </div>
             </section>
 
-            <section id="settingsPanel" class="ja-panel" hidden>
+            <section id="settingsPanel" class="ja-panel" role="tabpanel" aria-labelledby="settingsTab" hidden>
                 <form id="settingsForm">
                     <div class="ja-settings">
                         <div class="selectContainer">
@@ -475,7 +478,9 @@
             function showPanel(panelId) {
                 page.querySelectorAll('.ja-panel').forEach(function (panel) { panel.hidden = panel.id !== panelId; });
                 page.querySelectorAll('.ja-tab').forEach(function (tab) {
-                    tab.setAttribute('aria-selected', String(tab.dataset.panel === panelId));
+                    var selected = tab.dataset.panel === panelId;
+                    tab.setAttribute('aria-selected', String(selected));
+                    tab.tabIndex = selected ? 0 : -1;
                 });
                 message('');
                 if (panelId === 'collectionsPanel') { loadCollections(false); }
@@ -1256,6 +1261,19 @@
                 restoreSortPreferences();
                 page.querySelectorAll('.ja-tab').forEach(function (tab) {
                     tab.addEventListener('click', function () { showPanel(tab.dataset.panel); });
+                    tab.addEventListener('keydown', function (event) {
+                        var tabs = Array.prototype.slice.call(page.querySelectorAll('.ja-tab'));
+                        var currentIndex = tabs.indexOf(tab);
+                        var nextIndex = currentIndex;
+                        if (event.key === 'ArrowRight') { nextIndex = (currentIndex + 1) % tabs.length; }
+                        else if (event.key === 'ArrowLeft') { nextIndex = (currentIndex - 1 + tabs.length) % tabs.length; }
+                        else if (event.key === 'Home') { nextIndex = 0; }
+                        else if (event.key === 'End') { nextIndex = tabs.length - 1; }
+                        else { return; }
+                        event.preventDefault();
+                        tabs[nextIndex].focus();
+                        showPanel(tabs[nextIndex].dataset.panel);
+                    });
                 });
                 byId('refreshCollections').addEventListener('click', function () { loadCollections(false); });
                 byId('queueAllCollections').addEventListener('click', queueAllCollections);

@@ -6,8 +6,16 @@
     "overview": "AI-assisted collection annotation for Jellyfin",
     "owner": "KristopherPeck",
     "imageUrl": "https://raw.githubusercontent.com/KristopherPeck/JellyCAP/main/assets/title-cards/jellycap-repository-16x9.png",
-    "category": "Metadata",
+    "category": "General",
     "versions": [
+      {
+        "version": "0.4.0.0",
+        "changelog": "Beta 4 UI refresh for Jellyfin 12.4",
+        "targetAbi": "12.4.0.0",
+        "sourceUrl": "https://github.com/KristopherPeck/JellyCAP/releases/download/0.4.0.0/JellyCAP_0.4.0.0.zip",
+        "checksum": "116ADDEBCFA2E1DB9A628B382076E6AE",
+        "timestamp": "2026-10-31T00:13:29Z"
+      },
       {
         "version": "0.3.0.0",
         "changelog": "Beta 3 Release for Jellyfin 12.4",
