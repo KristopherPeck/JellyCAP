@@ -37,6 +37,7 @@
         .ja-muted { opacity: .72; }
         .ja-activity-summary { white-space: pre-line; line-height: 1.45; }
         .ja-meta { font-size: .92em; overflow-wrap: anywhere; }
+        .ja-meta [hidden] { display: none !important; }
         .ja-meta dt { font-weight: 600; margin-top: .65em; }
         .ja-meta dd { margin-left: 0; white-space: pre-wrap; }
         .ja-actions { display: flex; flex-wrap: wrap; gap: .6em; margin-top: 1em; }
@@ -173,7 +174,7 @@
                         </div>
                     </div>
 
-                    <p class="fieldDescription">Options labeled “with AI” use the configured provider. The community rating average is calculated locally from eligible collection members.</p>
+                    <p class="fieldDescription">Options labeled “with AI” use the configured provider. Community rating averages, years, and release dates are calculated locally from eligible collection members.</p>
                     <div class="ja-checks ja-generation-options">
                         <div class="ja-option">
                             <label class="emby-checkbox-label"><input is="emby-checkbox" id="allowInsecureEndpoint" type="checkbox" aria-describedby="helpAllowInsecureEndpoint"><span>Allow non-loopback HTTP endpoint</span></label>
@@ -208,6 +209,10 @@
                             <span id="helpUseAiCommunityRating" class="ja-info" tabindex="0" title="When enabled, AI suggests a 0–10 community rating from the supplied child ratings instead of using the locally calculated average."><span aria-hidden="true">i</span><span class="ja-sr-only">When enabled, AI suggests a 0–10 community rating from the supplied child ratings instead of using the locally calculated average.</span></span>
                         </div>
                         <div class="ja-option">
+                            <label class="emby-checkbox-label"><input is="emby-checkbox" id="calculateReleaseMetadata" type="checkbox" aria-describedby="helpCalculateReleaseMetadata"><span>Calculate year and release date</span></label>
+                            <span id="helpCalculateReleaseMetadata" class="ja-info" tabindex="0" title="JellyCAP locally uses the earliest eligible movie or TV series. Seasons and episodes are excluded, and an exact release date is never fabricated from a year-only value."><span aria-hidden="true">i</span><span class="ja-sr-only">JellyCAP locally uses the earliest eligible movie or TV series. Seasons and episodes are excluded, and an exact release date is never fabricated from a year-only value.</span></span>
+                        </div>
+                        <div class="ja-option">
                             <label class="emby-checkbox-label"><input is="emby-checkbox" id="allowSpoilers" type="checkbox" aria-describedby="helpAllowSpoilers"><span>Allow major spoilers</span></label>
                             <span id="helpAllowSpoilers" class="ja-info" tabindex="0" title="Allows the AI-generated overview to mention endings, deaths, and late-story revelations when useful."><span aria-hidden="true">i</span><span class="ja-sr-only">Allows the AI-generated overview to mention endings, deaths, and late-story revelations when useful.</span></span>
                         </div>
@@ -239,6 +244,11 @@
                             <label class="selectLabel" for="communityRatingUpdateMode">Community rating policy</label>
                             <select is="emby-select" id="communityRatingUpdateMode"><option value="0">Replace</option><option value="1">Only if empty</option></select>
                             <div class="fieldDescription">Uses the one-decimal average of every eligible rated member unless the AI option is enabled. Ratings without a value are ignored.</div>
+                        </div>
+                        <div class="selectContainer">
+                            <label class="selectLabel" for="releaseMetadataUpdateMode">Year and release date policy</label>
+                            <select is="emby-select" id="releaseMetadataUpdateMode"><option value="0">Replace</option><option value="1">Only if empty</option></select>
+                            <div class="fieldDescription">Uses the earliest eligible member year and its earliest known exact date. Year-only values never become January 1 dates.</div>
                         </div>
                         <div class="selectContainer">
                             <label class="selectLabel" for="overviewStyle">Overview style</label>
@@ -332,6 +342,7 @@
             var page = document.getElementById('JellyCAPPage');
             var loaded = false;
             var openReviewAfterGeneration = false;
+            var collectionFieldVisibility = null;
             var collectionStartIndex = 0;
             var collectionPageSize = 30;
             var reviewStartIndex = 0;
@@ -460,11 +471,24 @@
                 return node;
             }
 
-            function addMetadata(definition, label, content) {
+            function addMetadata(definition, label, content, collectionField) {
                 var term = element('dt', '', label);
                 var description = element('dd', '', content === null || content === undefined || content === '' ? '—' : content);
+                if (collectionField) {
+                    term.dataset.collectionMetadataField = collectionField;
+                    description.dataset.collectionMetadataField = collectionField;
+                }
                 definition.appendChild(term);
                 definition.appendChild(description);
+            }
+
+            function applyCollectionFieldVisibility(root) {
+                var scope = root || page;
+                scope.querySelectorAll('[data-collection-metadata-field]').forEach(function (node) {
+                    var field = node.dataset.collectionMetadataField;
+                    node.hidden = collectionFieldVisibility !== null
+                        && collectionFieldVisibility[field] === false;
+                });
             }
 
             function updatePager(infoId, previousId, nextId, startIndex, pageSize, totalCount, itemLabel) {
@@ -536,12 +560,15 @@
                         card.appendChild(element('p', 'ja-muted', countLabel(collection.linkedItemCount, 'directly linked item')));
                         appendCollectionActivity(card);
                         var metadata = element('dl', 'ja-meta');
-                        addMetadata(metadata, 'Sort title', collection.sortTitle);
-                        addMetadata(metadata, 'Content rating', collection.contentRating);
-                        addMetadata(metadata, 'Community rating', collection.communityRating);
-                        addMetadata(metadata, 'Overview', collection.overview);
-                        addMetadata(metadata, 'Genres', (collection.genres || []).join(', '));
-                        addMetadata(metadata, 'Tags', (collection.tags || []).join(', '));
+                        addMetadata(metadata, 'Sort title', collection.sortTitle, 'sortTitle');
+                        addMetadata(metadata, 'Content rating', collection.contentRating, 'contentRating');
+                        addMetadata(metadata, 'Community rating', collection.communityRating, 'communityRating');
+                        addMetadata(metadata, 'Year', collection.productionYear, 'releaseMetadata');
+                        addMetadata(metadata, 'Release date', formatReleaseDate(collection.premiereDate), 'releaseMetadata');
+                        addMetadata(metadata, 'Overview', collection.overview, 'overview');
+                        addMetadata(metadata, 'Genres', (collection.genres || []).join(', '), 'genres');
+                        addMetadata(metadata, 'Tags', (collection.tags || []).join(', '), 'tags');
+                        applyCollectionFieldVisibility(metadata);
                         card.appendChild(metadata);
                         var generationStatus = element('div', 'ja-message ja-generation-status');
                         generationStatus.setAttribute('data-generation-status', 'true');
@@ -602,6 +629,19 @@
                 if (!rawValue) { return ''; }
                 var parsed = new Date(rawValue);
                 return Number.isNaN(parsed.getTime()) ? '' : parsed.toLocaleString();
+            }
+
+            function dateInputValue(rawValue) {
+                if (!rawValue) { return ''; }
+                var match = String(rawValue).match(/^\d{4}-\d{2}-\d{2}/);
+                return match ? match[0] : '';
+            }
+
+            function formatReleaseDate(rawValue) {
+                var normalized = dateInputValue(rawValue);
+                if (!normalized) { return ''; }
+                var parts = normalized.split('-');
+                return Number(parts[1]) + '/' + Number(parts[2]) + '/' + parts[0];
             }
 
             function appendCollectionActivity(card) {
@@ -887,7 +927,7 @@
                     });
             }
 
-            function reviewField(card, proposal, key, label, multiline, numeric) {
+            function reviewField(card, proposal, key, label, multiline, controlType) {
                 var wrapper = element('div', 'ja-review-field');
                 var checkboxLabel = element('label', 'emby-checkbox-label');
                 var checkbox = document.createElement('input');
@@ -901,16 +941,27 @@
                 checkboxLabel.appendChild(element('span', '', ' Apply ' + label.toLowerCase()));
                 wrapper.appendChild(checkboxLabel);
                 var control = document.createElement(multiline ? 'textarea' : 'input');
-                if (!multiline) { control.type = numeric ? 'number' : 'text'; }
-                if (numeric) {
+                if (!multiline) {
+                    control.type = controlType === 'rating' || controlType === 'year'
+                        ? 'number'
+                        : (controlType === 'date' ? 'date' : 'text');
+                }
+                if (controlType === 'rating') {
                     control.min = '0';
                     control.max = '10';
                     control.step = '0.1';
                 }
+                if (controlType === 'year') {
+                    control.min = '1';
+                    control.max = '9999';
+                    control.step = '1';
+                }
                 control.dataset.reviewField = key;
-                control.value = Array.isArray(proposed)
-                    ? proposed.join(', ')
-                    : (proposed === null || proposed === undefined ? '' : proposed);
+                control.value = controlType === 'date'
+                    ? dateInputValue(proposed)
+                    : (Array.isArray(proposed)
+                        ? proposed.join(', ')
+                        : (proposed === null || proposed === undefined ? '' : proposed));
                 wrapper.appendChild(control);
                 card.appendChild(wrapper);
             }
@@ -964,10 +1015,15 @@
                         if (proposal.communityRatingSource) {
                             card.appendChild(element('p', 'ja-muted', 'Community rating source: ' + proposal.communityRatingSource));
                         }
+                        if (proposal.releaseMetadataSource) {
+                            card.appendChild(element('p', 'ja-muted', 'Year and release date source: ' + proposal.releaseMetadataSource));
+                        }
                         var current = element('dl', 'ja-meta');
                         addMetadata(current, 'Current sort title', proposal.original.sortTitle);
                         addMetadata(current, 'Current content rating', proposal.original.contentRating);
                         addMetadata(current, 'Current community rating', proposal.original.communityRating);
+                        addMetadata(current, 'Current year', proposal.original.productionYear);
+                        addMetadata(current, 'Current release date', formatReleaseDate(proposal.original.premiereDate));
                         addMetadata(current, 'Current overview', proposal.original.overview);
                         addMetadata(current, 'Current genres', (proposal.original.genres || []).join(', '));
                         addMetadata(current, 'Current tags', (proposal.original.tags || []).join(', '));
@@ -977,7 +1033,9 @@
                         }
                         reviewField(card, proposal, 'sortTitle', 'Sort title', false);
                         reviewField(card, proposal, 'contentRating', 'Content rating', false);
-                        reviewField(card, proposal, 'communityRating', 'Community rating', false, true);
+                        reviewField(card, proposal, 'communityRating', 'Community rating', false, 'rating');
+                        reviewField(card, proposal, 'productionYear', 'Year', false, 'year');
+                        reviewField(card, proposal, 'premiereDate', 'Release date', false, 'date');
                         reviewField(card, proposal, 'overview', 'Overview', true);
                         reviewField(card, proposal, 'genres', 'Genres', false);
                         reviewField(card, proposal, 'tags', 'Tags', false);
@@ -1009,12 +1067,16 @@
                     applySortTitle: getCheck('sortTitle'),
                     applyContentRating: getCheck('contentRating'),
                     applyCommunityRating: getCheck('communityRating'),
+                    applyProductionYear: getCheck('productionYear'),
+                    applyPremiereDate: getCheck('premiereDate'),
                     applyOverview: getCheck('overview'),
                     applyGenres: getCheck('genres'),
                     applyTags: getCheck('tags'),
                     sortTitle: getValue('sortTitle'),
                     contentRating: getValue('contentRating'),
                     communityRating: nullableNumberValue(getValue('communityRating')),
+                    productionYear: nullableIntegerValue(getValue('productionYear')),
+                    premiereDate: nullableDateValue(getValue('premiereDate')),
                     overview: getValue('overview'),
                     genres: listValue(getValue('genres')),
                     tags: listValue(getValue('tags')),
@@ -1099,10 +1161,21 @@
                 var normalized = String(rawValue || '').trim();
                 return normalized === '' ? null : Number(normalized);
             }
+            function nullableIntegerValue(rawValue) {
+                var normalized = String(rawValue || '').trim();
+                return normalized === '' ? null : Number.parseInt(normalized, 10);
+            }
+            function nullableDateValue(rawValue) {
+                var normalized = String(rawValue || '').trim();
+                return normalized === '' ? null : normalized;
+            }
             function syncCommunityRatingOptions() {
                 var enabled = checked('generateCommunityRating');
                 byId('useAiForCommunityRating').disabled = !enabled;
                 syncProviderRequirements();
+            }
+            function syncReleaseMetadataOptions() {
+                byId('releaseMetadataUpdateMode').disabled = !checked('calculateReleaseMetadata');
             }
             function syncProviderRequirements() {
                 var usesAi = checked('generateOverview')
@@ -1141,6 +1214,16 @@
 
             function applySettingsResponse(response) {
                 var config = response.configuration;
+                collectionFieldVisibility = {
+                    overview: Boolean(config.generateOverview),
+                    genres: Boolean(config.generateGenres),
+                    tags: Boolean(config.generateTags),
+                    sortTitle: Boolean(config.generateSortTitle),
+                    contentRating: Boolean(config.generateContentRating),
+                    communityRating: Boolean(config.generateCommunityRating),
+                    releaseMetadata: Boolean(config.calculateReleaseMetadata)
+                };
+                applyCollectionFieldVisibility();
                 setValue('providerType', enumValue(config.providerType, ['openai', 'anthropic', 'openaicompatible']));
                 setValue('endpoint', config.endpoint);
                 setChecked('allowInsecureEndpoint', config.allowInsecureEndpoint);
@@ -1153,7 +1236,9 @@
                 setChecked('generateContentRating', config.generateContentRating);
                 setChecked('generateCommunityRating', config.generateCommunityRating);
                 setChecked('useAiForCommunityRating', config.useAiForCommunityRating);
+                setChecked('calculateReleaseMetadata', config.calculateReleaseMetadata);
                 syncCommunityRatingOptions();
+                syncReleaseMetadataOptions();
                 openReviewAfterGeneration = Boolean(config.openReviewAfterGeneration);
                 setChecked('openReviewAfterGeneration', openReviewAfterGeneration);
                 maximumConcurrentGenerations = Math.max(1, Math.min(5, Number(config.maximumConcurrentGenerations) || 2));
@@ -1165,6 +1250,7 @@
                 setValue('sortTitleUpdateMode', enumValue(config.sortTitleUpdateMode, ['replace', 'onlyifempty']));
                 setValue('contentRatingUpdateMode', enumValue(config.contentRatingUpdateMode, ['replace', 'onlyifempty']));
                 setValue('communityRatingUpdateMode', enumValue(config.communityRatingUpdateMode, ['replace', 'onlyifempty']));
+                setValue('releaseMetadataUpdateMode', enumValue(config.releaseMetadataUpdateMode, ['replace', 'onlyifempty']));
                 setOverviewStyle(config.overviewStyle);
                 setValue('language', config.language);
                 setChecked('allowSpoilers', config.allowSpoilers);
@@ -1206,6 +1292,7 @@
                         generateContentRating: checked('generateContentRating'),
                         generateCommunityRating: checked('generateCommunityRating'),
                         useAiForCommunityRating: checked('useAiForCommunityRating'),
+                        calculateReleaseMetadata: checked('calculateReleaseMetadata'),
                         openReviewAfterGeneration: checked('openReviewAfterGeneration'),
                         maximumConcurrentGenerations: numberValue('maximumConcurrentGenerations'),
                         providerRequestDelaySeconds: numberValue('providerRequestDelaySeconds'),
@@ -1215,6 +1302,7 @@
                         sortTitleUpdateMode: numberValue('sortTitleUpdateMode'),
                         contentRatingUpdateMode: numberValue('contentRatingUpdateMode'),
                         communityRatingUpdateMode: numberValue('communityRatingUpdateMode'),
+                        releaseMetadataUpdateMode: numberValue('releaseMetadataUpdateMode'),
                         overviewStyle: getOverviewStyle(),
                         language: value('language'),
                         allowSpoilers: checked('allowSpoilers'),
@@ -1315,6 +1403,7 @@
                 byId('overviewStyle').addEventListener('change', syncOverviewStyleInput);
                 byId('generateCommunityRating').addEventListener('change', syncCommunityRatingOptions);
                 byId('useAiForCommunityRating').addEventListener('change', syncProviderRequirements);
+                byId('calculateReleaseMetadata').addEventListener('change', syncReleaseMetadataOptions);
                 ['generateOverview', 'generateGenres', 'generateTags', 'generateSortTitle', 'generateContentRating'].forEach(function (id) {
                     byId(id).addEventListener('change', syncProviderRequirements);
                 });

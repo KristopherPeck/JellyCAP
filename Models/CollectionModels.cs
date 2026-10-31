@@ -79,6 +79,16 @@ public sealed class CollectionSummary
     public float? CommunityRating { get; set; }
 
     /// <summary>
+    /// Gets or sets the current production year.
+    /// </summary>
+    public int? ProductionYear { get; set; }
+
+    /// <summary>
+    /// Gets or sets the current premiere or release date.
+    /// </summary>
+    public DateTime? PremiereDate { get; set; }
+
+    /// <summary>
     /// Gets or sets the current overview.
     /// </summary>
     public string Overview { get; set; } = string.Empty;
@@ -176,6 +186,11 @@ public sealed class CollectionContextItem
     public int? Year { get; set; }
 
     /// <summary>
+    /// Gets or sets the item premiere or release date.
+    /// </summary>
+    public DateTime? PremiereDate { get; set; }
+
+    /// <summary>
     /// Gets or sets the item overview.
     /// </summary>
     public string Overview { get; set; } = string.Empty;
@@ -225,6 +240,26 @@ public sealed class CollectionContext
     /// Gets or sets the number of eligible child ratings used in the average.
     /// </summary>
     public int CommunityRatingItemCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the collection's current production year.
+    /// </summary>
+    public int? CurrentProductionYear { get; set; }
+
+    /// <summary>
+    /// Gets or sets the collection's current premiere or release date.
+    /// </summary>
+    public DateTime? CurrentPremiereDate { get; set; }
+
+    /// <summary>
+    /// Gets or sets the earliest year derived from eligible collection members.
+    /// </summary>
+    public int? EarliestProductionYear { get; set; }
+
+    /// <summary>
+    /// Gets or sets the earliest exact premiere date for a member in the earliest year.
+    /// </summary>
+    public DateTime? EarliestPremiereDate { get; set; }
 
     /// <summary>
     /// Gets or sets the collection's current overview.

@@ -31,7 +31,8 @@ internal static class SettingsValidator
             || !Enum.IsDefined(configuration.TagUpdateMode)
             || !Enum.IsDefined(configuration.SortTitleUpdateMode)
             || !Enum.IsDefined(configuration.ContentRatingUpdateMode)
-            || !Enum.IsDefined(configuration.CommunityRatingUpdateMode))
+            || !Enum.IsDefined(configuration.CommunityRatingUpdateMode)
+            || !Enum.IsDefined(configuration.ReleaseMetadataUpdateMode))
         {
             throw new ArgumentException("One or more configuration modes are invalid.", nameof(source));
         }
@@ -103,7 +104,8 @@ internal static class SettingsValidator
             && !configuration.GenerateTags
             && !configuration.GenerateSortTitle
             && !configuration.GenerateContentRating
-            && !configuration.GenerateCommunityRating)
+            && !configuration.GenerateCommunityRating
+            && !configuration.CalculateReleaseMetadata)
         {
             throw new ArgumentException("At least one metadata field must be enabled.", nameof(source));
         }

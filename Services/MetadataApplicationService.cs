@@ -48,7 +48,9 @@ public sealed class MetadataApplicationService
                 && !request.ApplyTags
                 && !request.ApplySortTitle
                 && !request.ApplyContentRating
-                && !request.ApplyCommunityRating)
+                && !request.ApplyCommunityRating
+                && !request.ApplyProductionYear
+                && !request.ApplyPremiereDate)
             {
                 throw new ArgumentException("Select at least one metadata field to apply.", nameof(request));
             }
@@ -56,9 +58,12 @@ public sealed class MetadataApplicationService
             var proposal = await GetPendingAsync(proposalId, cancellationToken).ConfigureAwait(false);
             var collection = _collectionContextService.GetCollection(proposal.CollectionId);
             var current = MetadataFingerprint.Snapshot(collection);
-            var currentFingerprint = proposal.FingerprintVersion >= MetadataFingerprint.CurrentVersion
-                ? MetadataFingerprint.Compute(current)
-                : MetadataFingerprint.ComputeLegacy(current);
+            var currentFingerprint = proposal.FingerprintVersion switch
+            {
+                >= MetadataFingerprint.CurrentVersion => MetadataFingerprint.Compute(current),
+                2 => MetadataFingerprint.ComputeVersion2(current),
+                _ => MetadataFingerprint.ComputeLegacy(current)
+            };
             if (!request.Force
                 && !string.Equals(currentFingerprint, proposal.OriginalFingerprint, StringComparison.Ordinal))
             {
@@ -96,6 +101,25 @@ public sealed class MetadataApplicationService
                     : null;
             }
 
+            if (request.ApplyProductionYear)
+            {
+                if (request.ProductionYear is < 1 or > 9999)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(request),
+                        "Production year must be between 1 and 9999.");
+                }
+
+                collection.ProductionYear = request.ProductionYear;
+            }
+
+            if (request.ApplyPremiereDate)
+            {
+                collection.PremiereDate = request.PremiereDate.HasValue
+                    ? DateTime.SpecifyKind(request.PremiereDate.Value.Date, DateTimeKind.Utc)
+                    : null;
+            }
+
             if (request.ApplyOverview)
             {
                 collection.Overview = NormalizeOverview(request.Overview, configuration.MaximumOverviewCharacters);
@@ -120,6 +144,8 @@ public sealed class MetadataApplicationService
                 SortTitle = applied.SortTitle,
                 ContentRating = applied.ContentRating,
                 CommunityRating = applied.CommunityRating,
+                ProductionYear = applied.ProductionYear,
+                PremiereDate = applied.PremiereDate,
                 Overview = applied.Overview,
                 Genres = applied.Genres,
                 Tags = applied.Tags,
@@ -241,12 +267,16 @@ public sealed class MetadataApplicationService
             ApplySortTitle = !string.Equals(proposal.Original.SortTitle, proposal.Proposed.SortTitle, StringComparison.Ordinal),
             ApplyContentRating = !string.Equals(proposal.Original.ContentRating, proposal.Proposed.ContentRating, StringComparison.Ordinal),
             ApplyCommunityRating = proposal.Original.CommunityRating != proposal.Proposed.CommunityRating,
+            ApplyProductionYear = proposal.Original.ProductionYear != proposal.Proposed.ProductionYear,
+            ApplyPremiereDate = proposal.Original.PremiereDate?.Date != proposal.Proposed.PremiereDate?.Date,
             ApplyOverview = !string.Equals(proposal.Original.Overview, proposal.Proposed.Overview, StringComparison.Ordinal),
             ApplyGenres = !proposal.Original.Genres.SequenceEqual(proposal.Proposed.Genres, StringComparer.Ordinal),
             ApplyTags = !proposal.Original.Tags.SequenceEqual(proposal.Proposed.Tags, StringComparer.Ordinal),
             SortTitle = proposal.Proposed.SortTitle,
             ContentRating = proposal.Proposed.ContentRating,
             CommunityRating = proposal.Proposed.CommunityRating,
+            ProductionYear = proposal.Proposed.ProductionYear,
+            PremiereDate = proposal.Proposed.PremiereDate,
             Overview = proposal.Proposed.Overview,
             Genres = proposal.Proposed.Genres,
             Tags = proposal.Proposed.Tags

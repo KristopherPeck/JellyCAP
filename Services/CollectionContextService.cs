@@ -68,6 +68,8 @@ public sealed class CollectionContextService
                 SortTitle = boxSet.ForcedSortName ?? string.Empty,
                 ContentRating = boxSet.OfficialRating ?? string.Empty,
                 CommunityRating = boxSet.CommunityRating,
+                ProductionYear = boxSet.ProductionYear,
+                PremiereDate = NormalizeDate(boxSet.PremiereDate),
                 Overview = boxSet.Overview ?? string.Empty,
                 Genres = Normalize(boxSet.Genres),
                 Tags = Normalize(boxSet.Tags),
@@ -176,6 +178,22 @@ public sealed class CollectionContextService
             .Where(rating => rating is >= 0 and <= 10)
             .Select(rating => rating!.Value)
             .ToArray();
+        var candidateYears = ordered
+            .Select(item => item.ProductionYear ?? item.PremiereDate?.Year)
+            .Where(year => year is >= 1 and <= 9999)
+            .Select(year => year!.Value)
+            .ToArray();
+        int? earliestProductionYear = candidateYears.Length == 0 ? null : candidateYears.Min();
+        var exactDatesInEarliestYear = earliestProductionYear.HasValue
+            ? ordered
+                .Select(item => item.PremiereDate)
+                .Where(date => date.HasValue && date.Value.Year == earliestProductionYear.Value)
+                .Select(date => NormalizeDate(date)!.Value)
+                .ToArray()
+            : Array.Empty<DateTime>();
+        DateTime? earliestPremiereDate = exactDatesInEarliestYear.Length == 0
+            ? null
+            : exactDatesInEarliestYear.Min();
         var boundedItems = BuildBoundedItems(ordered, boundedMaximum);
 
         return new CollectionContext
@@ -188,6 +206,10 @@ public sealed class CollectionContextService
                 ? null
                 : (float)Math.Round(communityRatings.Average(), 1, MidpointRounding.AwayFromZero),
             CommunityRatingItemCount = communityRatings.Length,
+            CurrentProductionYear = collection.ProductionYear,
+            CurrentPremiereDate = NormalizeDate(collection.PremiereDate),
+            EarliestProductionYear = earliestProductionYear,
+            EarliestPremiereDate = earliestPremiereDate,
             CurrentOverview = LimitText(collection.Overview, 5000),
             CurrentGenres = Normalize(collection.Genres),
             CurrentTags = Normalize(collection.Tags),
@@ -270,6 +292,7 @@ public sealed class CollectionContextService
             ContentRating = LimitText(item.OfficialRating, 100),
             CommunityRating = item.CommunityRating,
             Year = item.ProductionYear,
+            PremiereDate = NormalizeDate(item.PremiereDate),
             Overview = LimitText(item.Overview, 3000),
             Genres = Normalize(item.Genres),
             Tags = Normalize(item.Tags)
@@ -282,6 +305,13 @@ public sealed class CollectionContextService
         return normalized.Length <= maximumLength
             ? normalized
             : normalized[..maximumLength].TrimEnd();
+    }
+
+    private static DateTime? NormalizeDate(DateTime? value)
+    {
+        return value.HasValue
+            ? DateTime.SpecifyKind(value.Value.Date, DateTimeKind.Utc)
+            : null;
     }
 
     private static string[] Normalize(IEnumerable<string>? values)

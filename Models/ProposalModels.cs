@@ -62,6 +62,16 @@ public sealed class GeneratedMetadata
     public float? CommunityRating { get; set; }
 
     /// <summary>
+    /// Gets or sets the locally calculated production year.
+    /// </summary>
+    public int? ProductionYear { get; set; }
+
+    /// <summary>
+    /// Gets or sets the locally calculated premiere or release date.
+    /// </summary>
+    public DateTime? PremiereDate { get; set; }
+
+    /// <summary>
     /// Gets or sets the generated overview.
     /// </summary>
     public string Overview { get; set; } = string.Empty;
@@ -101,6 +111,16 @@ public sealed class MetadataSnapshot
     /// Gets or sets the community rating.
     /// </summary>
     public float? CommunityRating { get; set; }
+
+    /// <summary>
+    /// Gets or sets the production year.
+    /// </summary>
+    public int? ProductionYear { get; set; }
+
+    /// <summary>
+    /// Gets or sets the premiere or release date.
+    /// </summary>
+    public DateTime? PremiereDate { get; set; }
 
     /// <summary>
     /// Gets or sets the overview.
@@ -179,6 +199,11 @@ public sealed class MetadataProposal
     public string CommunityRatingSource { get; set; } = string.Empty;
 
     /// <summary>
+    /// Gets or sets how the proposed production year and premiere date were produced.
+    /// </summary>
+    public string ReleaseMetadataSource { get; set; } = string.Empty;
+
+    /// <summary>
     /// Gets or sets the proposal status.
     /// </summary>
     public ProposalStatus Status { get; set; } = ProposalStatus.Pending;
@@ -215,6 +240,16 @@ public sealed class ApplyProposalRequest
     public bool ApplyCommunityRating { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the production year should be applied.
+    /// </summary>
+    public bool ApplyProductionYear { get; set; }
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the premiere or release date should be applied.
+    /// </summary>
+    public bool ApplyPremiereDate { get; set; }
+
+    /// <summary>
     /// Gets or sets a value indicating whether the overview should be applied.
     /// </summary>
     public bool ApplyOverview { get; set; }
@@ -243,6 +278,16 @@ public sealed class ApplyProposalRequest
     /// Gets or sets the reviewed community rating.
     /// </summary>
     public float? CommunityRating { get; set; }
+
+    /// <summary>
+    /// Gets or sets the reviewed production year.
+    /// </summary>
+    public int? ProductionYear { get; set; }
+
+    /// <summary>
+    /// Gets or sets the reviewed premiere or release date.
+    /// </summary>
+    public DateTime? PremiereDate { get; set; }
 
     /// <summary>
     /// Gets or sets the reviewed overview.

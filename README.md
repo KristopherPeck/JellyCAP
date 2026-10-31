@@ -9,7 +9,7 @@
 
 ![JellyCAP Collection Metadata Enrichment Plugin](assets/title-cards/jellycap-repository.png)
 
-JellyCAP (Jellyfin Collection Annotation Plugin) creates reviewable metadata proposals from the items already inside a Jellyfin collection. It can suggest overviews, genres, tags, sort titles, content ratings, and community ratings without immediately overwriting the collection.
+JellyCAP (Jellyfin Collection Annotation Plugin) creates reviewable metadata proposals from the items already inside a Jellyfin collection. It can suggest overviews, genres, tags, sort titles, content ratings, community ratings, years, and release dates without immediately overwriting the collection.
 
 Every proposal can be inspected and edited by a Jellyfin administrator before selected fields are applied.
 
@@ -42,6 +42,7 @@ Compare existing and proposed metadata, edit the result, choose individual field
 
 - Generates reviewable collection overviews, genres, tags, sort titles, and content ratings
 - Calculates a community-rating average from rated collection members
+- Optionally calculates the collection year and release date from its earliest eligible members
 - Optionally asks the configured AI provider to suggest a community rating
 - Supports OpenAI, Anthropic, and OpenAI-compatible endpoints
 - Lets administrators edit proposals and apply only selected fields
@@ -119,6 +120,8 @@ The server runs two generation jobs concurrently by default. This can be configu
 | Sort title | AI-generated to provide consistent collection sorting |
 | Content rating | AI chooses only from exact ratings already found on eligible members |
 | Community rating | Local one-decimal member average, or an optional AI suggestion |
+| Year | Locally calculated from the earliest eligible collection member |
+| Release date | Earliest exact member release date in the calculated collection year; never fabricated from a year-only value |
 
 When English is selected, JellyCAP checks generated prose for unexpected non-Latin text while allowing official names and titles copied from the source metadata. If no eligible child content rating exists, the collection's current rating is preserved.
 
@@ -161,7 +164,7 @@ Environment variables avoid JellyCAP's plaintext `secrets.json`, but they are no
 
 ## Privacy and security
 
-JellyCAP sends a bounded metadata context to the configured provider. This can include collection and eligible-member names, overviews, genres, tags, ratings, sort titles, production years, and media types.
+JellyCAP sends a bounded metadata context to the configured provider. This can include collection and eligible-member names, overviews, genres, tags, ratings, sort titles, production years, release dates, and media types.
 
 It does **not** send file paths, media streams, provider identifiers, Jellyfin user history, or provider credentials as prompt content. Child metadata is treated as untrusted input, request and response sizes are bounded, and credentials are not returned to the browser.
 

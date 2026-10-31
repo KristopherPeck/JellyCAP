@@ -70,6 +70,12 @@ public sealed class PluginConfiguration : BasePluginConfiguration
     public bool UseAiForCommunityRating { get; set; }
 
     /// <summary>
+    /// Gets or sets a value indicating whether the collection year and release date are calculated
+    /// from the earliest eligible collection members.
+    /// </summary>
+    public bool CalculateReleaseMetadata { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets a value indicating whether the dashboard opens pending reviews after generation.
     /// </summary>
     public bool OpenReviewAfterGeneration { get; set; }
@@ -115,6 +121,11 @@ public sealed class PluginConfiguration : BasePluginConfiguration
     /// Gets or sets the community rating replacement policy.
     /// </summary>
     public OverviewUpdateMode CommunityRatingUpdateMode { get; set; } = OverviewUpdateMode.Replace;
+
+    /// <summary>
+    /// Gets or sets the replacement policy for locally calculated year and release date values.
+    /// </summary>
+    public OverviewUpdateMode ReleaseMetadataUpdateMode { get; set; } = OverviewUpdateMode.Replace;
 
     /// <summary>
     /// Gets or sets the desired overview style.
@@ -199,6 +210,7 @@ public sealed class PluginConfiguration : BasePluginConfiguration
             GenerateContentRating = GenerateContentRating,
             GenerateCommunityRating = GenerateCommunityRating,
             UseAiForCommunityRating = UseAiForCommunityRating,
+            CalculateReleaseMetadata = CalculateReleaseMetadata,
             OpenReviewAfterGeneration = OpenReviewAfterGeneration,
             MaximumConcurrentGenerations = MaximumConcurrentGenerations,
             ProviderRequestDelaySeconds = ProviderRequestDelaySeconds,
@@ -208,6 +220,7 @@ public sealed class PluginConfiguration : BasePluginConfiguration
             SortTitleUpdateMode = SortTitleUpdateMode,
             ContentRatingUpdateMode = ContentRatingUpdateMode,
             CommunityRatingUpdateMode = CommunityRatingUpdateMode,
+            ReleaseMetadataUpdateMode = ReleaseMetadataUpdateMode,
             OverviewStyle = OverviewStyle,
             Language = Language,
             AllowSpoilers = AllowSpoilers,

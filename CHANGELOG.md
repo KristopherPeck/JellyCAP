@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Optional local calculation of collection year and release date from the earliest eligible movies or TV series, with reviewable field-level application controls.
+
+### Changed
+
+- Collection cards now hide metadata fields that are disabled in the saved generation settings while pending reviews continue to show every proposed field.
+
 ## [0.4.0.0] - 2026-10-30
 
 ### Changed

@@ -83,13 +83,16 @@ public sealed class ProposalService
             OriginalFingerprint = originalFingerprint,
             FingerprintVersion = MetadataFingerprint.CurrentVersion,
             Proposed = proposed,
-            Provider = usesAi ? GetProviderDisplayName(configuration.ProviderType) : "Jellyfin ratings",
-            Model = usesAi ? configuration.Model : "Average",
+            Provider = usesAi ? GetProviderDisplayName(configuration.ProviderType) : "Jellyfin metadata",
+            Model = usesAi ? configuration.Model : "Local calculation",
             ContextItemCount = context.Items.Length,
             CommunityRatingSource = configuration.GenerateCommunityRating
                 ? configuration.UseAiForCommunityRating
                     ? "AI suggestion"
                     : $"Average of {context.CommunityRatingItemCount} rated {(context.CommunityRatingItemCount == 1 ? "item" : "items")}"
+                : string.Empty,
+            ReleaseMetadataSource = configuration.CalculateReleaseMetadata
+                ? "Earliest eligible collection members"
                 : string.Empty
         };
 
@@ -116,6 +119,8 @@ public sealed class ProposalService
         return NormalizedTextEquals(original.SortTitle, proposed.SortTitle)
             && NormalizedTextEquals(original.ContentRating, proposed.ContentRating)
             && original.CommunityRating == proposed.CommunityRating
+            && original.ProductionYear == proposed.ProductionYear
+            && NullableDateEquals(original.PremiereDate, proposed.PremiereDate)
             && NormalizedTextEquals(original.Overview, proposed.Overview)
             && NormalizedSetEquals(original.Genres, proposed.Genres)
             && NormalizedSetEquals(original.Tags, proposed.Tags);
@@ -123,6 +128,9 @@ public sealed class ProposalService
 
     private static bool NormalizedTextEquals(string? left, string? right)
         => string.Equals(left?.Trim(), right?.Trim(), StringComparison.Ordinal);
+
+    private static bool NullableDateEquals(DateTime? left, DateTime? right)
+        => left?.Date == right?.Date;
 
     private static bool NormalizedSetEquals(IEnumerable<string> left, IEnumerable<string> right)
     {
@@ -145,6 +153,7 @@ public sealed class ProposalService
         configuration.GenerateSortTitle = false;
         configuration.GenerateContentRating = false;
         configuration.GenerateCommunityRating = false;
+        configuration.CalculateReleaseMetadata = false;
         configuration = SettingsValidator.Validate(configuration);
         configuration.MaximumOverviewCharacters = 100;
         await EnterProviderGateAsync(cancellationToken).ConfigureAwait(false);
@@ -301,11 +310,41 @@ public sealed class ProposalService
                 configuration.CommunityRatingUpdateMode);
         }
 
+        var productionYear = original.ProductionYear;
+        var premiereDate = original.PremiereDate;
+        if (configuration.CalculateReleaseMetadata)
+        {
+            if (!context.EarliestProductionYear.HasValue)
+            {
+                warnings.Add("No eligible collection members had a production year or release date, so no year or release date was suggested.");
+            }
+            else
+            {
+                productionYear = ApplyNullableScalarPolicy(
+                    original.ProductionYear,
+                    context.EarliestProductionYear,
+                    configuration.ReleaseMetadataUpdateMode);
+                if (context.EarliestPremiereDate.HasValue)
+                {
+                    premiereDate = ApplyNullableScalarPolicy(
+                        original.PremiereDate,
+                        context.EarliestPremiereDate,
+                        configuration.ReleaseMetadataUpdateMode);
+                }
+                else
+                {
+                    warnings.Add($"The earliest eligible member year is {context.EarliestProductionYear.Value}, but no exact release date was available for that year. The collection release date was left unchanged.");
+                }
+            }
+        }
+
         return new GeneratedMetadata
         {
             SortTitle = sortTitle,
             ContentRating = contentRating,
             CommunityRating = communityRating,
+            ProductionYear = productionYear,
+            PremiereDate = premiereDate,
             Overview = overview,
             Genres = configuration.GenerateGenres
                 ? Combine(original.Genres, generatedGenres, configuration.GenreUpdateMode)
@@ -328,7 +367,8 @@ public sealed class ProposalService
         return generated;
     }
 
-    private static float? ApplyNullableScalarPolicy(float? existing, float? generated, OverviewUpdateMode mode)
+    private static T? ApplyNullableScalarPolicy<T>(T? existing, T? generated, OverviewUpdateMode mode)
+        where T : struct
     {
         if (!generated.HasValue
             || (mode == OverviewUpdateMode.OnlyIfEmpty && existing.HasValue))

@@ -14,7 +14,7 @@ internal static class MetadataFingerprint
     /// <summary>
     /// Gets the current fingerprint format version.
     /// </summary>
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     /// <summary>
     /// Creates a snapshot from a Jellyfin item.
@@ -28,6 +28,8 @@ internal static class MetadataFingerprint
             SortTitle = item.ForcedSortName ?? string.Empty,
             ContentRating = item.OfficialRating ?? string.Empty,
             CommunityRating = item.CommunityRating,
+            ProductionYear = item.ProductionYear,
+            PremiereDate = NormalizeDate(item.PremiereDate),
             Overview = item.Overview ?? string.Empty,
             Genres = Normalize(item.Genres),
             Tags = Normalize(item.Tags)
@@ -40,6 +42,27 @@ internal static class MetadataFingerprint
     /// <param name="snapshot">The metadata snapshot.</param>
     /// <returns>A lowercase hexadecimal SHA-256 digest.</returns>
     public static string Compute(MetadataSnapshot snapshot)
+    {
+        var canonical = string.Join(
+            '\n',
+            snapshot.SortTitle.Trim(),
+            snapshot.ContentRating.Trim(),
+            snapshot.CommunityRating?.ToString("R", CultureInfo.InvariantCulture) ?? string.Empty,
+            snapshot.ProductionYear?.ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            snapshot.PremiereDate?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? string.Empty,
+            snapshot.Overview.Trim(),
+            string.Join('\u001f', Normalize(snapshot.Genres)),
+            string.Join('\u001f', Normalize(snapshot.Tags)));
+
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// Computes the fingerprint format used before production year and premiere date were managed.
+    /// </summary>
+    /// <param name="snapshot">The metadata snapshot.</param>
+    /// <returns>A lowercase hexadecimal SHA-256 digest.</returns>
+    public static string ComputeVersion2(MetadataSnapshot snapshot)
     {
         var canonical = string.Join(
             '\n',
@@ -79,5 +102,12 @@ internal static class MetadataFingerprint
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static DateTime? NormalizeDate(DateTime? value)
+    {
+        return value.HasValue
+            ? DateTime.SpecifyKind(value.Value.Date, DateTimeKind.Utc)
+            : null;
     }
 }
