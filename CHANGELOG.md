@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Stabilized global, server queue, and settings status messages so updates no longer shift surrounding dashboard content; truncated text remains available as a tooltip.
+
 ## [0.6.0.0] - 2026-11-02
 
 ### Changed
