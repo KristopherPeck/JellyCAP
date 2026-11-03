@@ -84,9 +84,17 @@ Compare existing and proposed metadata, edit the result, choose individual field
 
 ### Manual installation
 
+The plugin repository method is preferred because Jellyfin creates and manages the plugin metadata. For a manual installation or upgrade:
+
 1. Download `JellyCAP_<version>.zip` from the matching [GitHub release](https://github.com/KristopherPeck/JellyCAP/releases).
-2. Extract the archive into a `JellyCAP` directory beneath Jellyfin's plugin directory.
-3. Restart Jellyfin.
+2. Stop Jellyfin before changing plugin files.
+3. At the top level of Jellyfin's plugin directory, move old binary directories named `JellyCAP`, `JellyCAP_<old-version>`, or the legacy `JellyAnnotator` outside the plugin directory, or remove them. Do not remove the `configurations` directory, `jellycap.db`, `secrets.json`, or other JellyCAP data files.
+4. Create a versioned directory named `JellyCAP_<version>` using the exact four-part release version, such as `JellyCAP_0.5.0.0`.
+5. Extract the complete release archive directly into that versioned directory. Do not copy only the main plugin DLL.
+6. Start Jellyfin and confirm the installed version on the Plugins page.
+
+> [!IMPORTANT]
+> Do not manually install JellyCAP into an unversioned `JellyCAP` directory. Without catalog metadata, Jellyfin assigns an unversioned plugin directory the server's version, which can cause it to supersede catalog-installed JellyCAP releases or display inconsistent installed versions.
 
 Common plugin locations include:
 
@@ -96,7 +104,7 @@ Common plugin locations include:
 | Windows user install | `%LocalAppData%\jellyfin\plugins` |
 | Common Linux packages | `/var/lib/jellyfin/plugins` |
 
-Do not install a plugin-local `runtimes` directory or native `e_sqlite3` file. JellyCAP uses the native SQLite runtime supplied by Jellyfin.
+Do not install a plugin-local `runtimes` directory or native `e_sqlite3` file. JellyCAP uses the native SQLite runtime supplied by Jellyfin. The official release archive already contains the required managed SQLite assemblies.
 
 ## Getting started
 

@@ -12,7 +12,7 @@
      data-require="emby-button,emby-checkbox,emby-input,emby-select">
     <style>
         .ja-page { max-width: 1100px; }
-        .ja-tabs { display: flex; align-items: stretch; margin: 1.25em 0; overflow-x: auto; border-bottom: 1px solid rgba(255,255,255,.16); }
+        .ja-tabs { display: flex; align-items: stretch; margin: 1.25em 0 .75em; overflow-x: auto; border-bottom: 1px solid rgba(255,255,255,.16); }
         .ja-tab { flex: 0 0 auto; margin: 0; padding: .85em 1.1em .75em; border: 0; border-bottom: 3px solid transparent; background: transparent; color: inherit; cursor: pointer; font: inherit; opacity: .72; white-space: nowrap; }
         .ja-tab:hover { background: rgba(255,255,255,.04); opacity: 1; }
         .ja-tab:focus-visible { outline: 2px solid #00a4dc; outline-offset: -2px; }
@@ -46,6 +46,7 @@
         .ja-generation-actions > button { flex: 0 0 auto; }
         .ja-generation-status { margin: 1em 0 0; overflow-wrap: anywhere; }
         .ja-message { min-height: 1.5em; margin: .75em 0; }
+        #globalMessage:empty { display: none; }
         .ja-message.error { color: #ff8a80; }
         .ja-message.success { color: #69f0ae; }
         .ja-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 1.25em; }
@@ -660,8 +661,6 @@
                 var parts = [count === 0
                     ? 'Never successfully generated'
                     : 'Generated ' + count + (count === 1 ? ' time' : ' times')];
-                if (status === 'queued') { parts.push('Queued'); }
-                if (status === 'running') { parts.push('Generating now'); }
                 if (activity.lastGeneratedAtUtc) {
                     parts.push('Last generated ' + formatActivityDate(activity.lastGeneratedAtUtc));
                 }
