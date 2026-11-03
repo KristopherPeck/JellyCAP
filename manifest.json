@@ -9,6 +9,14 @@
         "category":  "General",
         "versions":  [
                          {
+                             "version":  "0.6.0.0",
+                             "changelog":  "Beta 6 release with dashboard and pending-review refinements plus safer manual installation guidance",
+                             "targetAbi":  "12.4.0.0",
+                             "sourceUrl":  "https://github.com/KristopherPeck/JellyCAP/releases/download/0.6.0.0/JellyCAP_0.6.0.0.zip",
+                             "checksum":  "7650F8C507F456414D2CD561090425AF",
+                             "timestamp":  "2026-11-03T02:31:41Z"
+                         },
+                         {
                              "version":  "0.5.0.0",
                              "changelog":  "Beta 5 release with locally calculated collection years and release dates",
                              "targetAbi":  "12.4.0.0",

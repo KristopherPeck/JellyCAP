@@ -1,3 +1,4 @@
+using Jellyfin.Plugin.JellyCAP.Configuration;
 using Jellyfin.Plugin.JellyCAP.Models;
 using MediaBrowser.Controller.Library;
 using Microsoft.Extensions.Logging;
@@ -214,6 +215,9 @@ public sealed class MetadataApplicationService
     public async Task<BulkProposalApprovalResponse> ApplyAllPendingAsync(CancellationToken cancellationToken)
     {
         var proposals = await _proposalStore.ListPendingAsync(cancellationToken).ConfigureAwait(false);
+        var configuration = SettingsValidator.Validate(
+            Plugin.Instance?.Configuration
+            ?? throw new InvalidOperationException("JellyCAP is not initialized."));
         var failures = new List<BulkProposalApprovalFailure>();
         var failedCount = 0;
         var appliedCount = 0;
@@ -223,7 +227,7 @@ public sealed class MetadataApplicationService
             {
                 await ApplyAsync(
                     proposal.Id,
-                    CreateApplyGeneratedRequest(proposal),
+                    CreateApplyGeneratedRequest(proposal, configuration),
                     cancellationToken).ConfigureAwait(false);
                 appliedCount++;
             }
@@ -260,18 +264,28 @@ public sealed class MetadataApplicationService
         };
     }
 
-    private static ApplyProposalRequest CreateApplyGeneratedRequest(MetadataProposal proposal)
+    private static ApplyProposalRequest CreateApplyGeneratedRequest(
+        MetadataProposal proposal,
+        PluginConfiguration configuration)
     {
         return new ApplyProposalRequest
         {
-            ApplySortTitle = !string.Equals(proposal.Original.SortTitle, proposal.Proposed.SortTitle, StringComparison.Ordinal),
-            ApplyContentRating = !string.Equals(proposal.Original.ContentRating, proposal.Proposed.ContentRating, StringComparison.Ordinal),
-            ApplyCommunityRating = proposal.Original.CommunityRating != proposal.Proposed.CommunityRating,
-            ApplyProductionYear = proposal.Original.ProductionYear != proposal.Proposed.ProductionYear,
-            ApplyPremiereDate = proposal.Original.PremiereDate?.Date != proposal.Proposed.PremiereDate?.Date,
-            ApplyOverview = !string.Equals(proposal.Original.Overview, proposal.Proposed.Overview, StringComparison.Ordinal),
-            ApplyGenres = !proposal.Original.Genres.SequenceEqual(proposal.Proposed.Genres, StringComparer.Ordinal),
-            ApplyTags = !proposal.Original.Tags.SequenceEqual(proposal.Proposed.Tags, StringComparer.Ordinal),
+            ApplySortTitle = configuration.GenerateSortTitle
+                && !string.Equals(proposal.Original.SortTitle, proposal.Proposed.SortTitle, StringComparison.Ordinal),
+            ApplyContentRating = configuration.GenerateContentRating
+                && !string.Equals(proposal.Original.ContentRating, proposal.Proposed.ContentRating, StringComparison.Ordinal),
+            ApplyCommunityRating = configuration.GenerateCommunityRating
+                && proposal.Original.CommunityRating != proposal.Proposed.CommunityRating,
+            ApplyProductionYear = configuration.CalculateReleaseMetadata
+                && proposal.Original.ProductionYear != proposal.Proposed.ProductionYear,
+            ApplyPremiereDate = configuration.CalculateReleaseMetadata
+                && proposal.Original.PremiereDate?.Date != proposal.Proposed.PremiereDate?.Date,
+            ApplyOverview = configuration.GenerateOverview
+                && !string.Equals(proposal.Original.Overview, proposal.Proposed.Overview, StringComparison.Ordinal),
+            ApplyGenres = configuration.GenerateGenres
+                && !proposal.Original.Genres.SequenceEqual(proposal.Proposed.Genres, StringComparer.Ordinal),
+            ApplyTags = configuration.GenerateTags
+                && !proposal.Original.Tags.SequenceEqual(proposal.Proposed.Tags, StringComparer.Ordinal),
             SortTitle = proposal.Proposed.SortTitle,
             ContentRating = proposal.Proposed.ContentRating,
             CommunityRating = proposal.Proposed.CommunityRating,

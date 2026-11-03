@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.6.0.0] - 2026-11-02
+
+### Changed
+
+- Reduced the space between the dashboard navigation and each section's controls.
+- Collection activity summaries now reserve active queue and generation messaging for the dedicated status controls instead of adding duplicate lines.
+- Pending reviews now hide metadata fields disabled in the saved settings, prevent empty individual approvals, and exclude disabled fields from bulk approval.
+- Manual installation instructions now use exact four-part versioned directories and include safer upgrade guidance to prevent conflicts with catalog-installed releases.
+
 ## [0.5.0.0] - 2026-10-31
 
 ### Added
@@ -85,7 +94,8 @@ Beta 1 is the first public test release of JellyCAP for Jellyfin 12.4.
 - This is beta software. Back up Jellyfin metadata and test with a small number of collections before using Queue All.
 - Generated metadata is always presented for administrator review before it can be applied.
 
-[Unreleased]: https://github.com/KristopherPeck/JellyCAP/compare/0.5.0.0...HEAD
+[Unreleased]: https://github.com/KristopherPeck/JellyCAP/compare/0.6.0.0...HEAD
+[0.6.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.6.0.0
 [0.5.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.5.0.0
 [0.4.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.4.0.0
 [0.3.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.3.0.0

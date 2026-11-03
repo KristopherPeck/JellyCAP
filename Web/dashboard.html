@@ -487,9 +487,52 @@
                 var scope = root || page;
                 scope.querySelectorAll('[data-collection-metadata-field]').forEach(function (node) {
                     var field = node.dataset.collectionMetadataField;
-                    node.hidden = collectionFieldVisibility !== null
-                        && collectionFieldVisibility[field] === false;
+                    node.hidden = !isCollectionFieldVisible(field);
                 });
+            }
+
+            function isCollectionFieldVisible(field) {
+                return collectionFieldVisibility === null
+                    || collectionFieldVisibility[field] !== false;
+            }
+
+            function proposalFieldVisibilityKey(key) {
+                return key === 'productionYear' || key === 'premiereDate'
+                    ? 'releaseMetadata'
+                    : key;
+            }
+
+            function markCollectionField(node, field) {
+                node.dataset.collectionMetadataField = field;
+                node.hidden = !isCollectionFieldVisible(field);
+                return node;
+            }
+
+            function syncReviewCardApplyState(card) {
+                var applyButton = card.querySelector('[data-approve-proposal]');
+                var notice = card.querySelector('[data-no-enabled-review-fields]');
+                if (!applyButton || !notice) { return; }
+
+                var hasEnabledChange = false;
+                var hasSelectedField = false;
+                card.querySelectorAll('[data-apply-field]').forEach(function (checkbox) {
+                    if (!isCollectionFieldVisible(proposalFieldVisibilityKey(checkbox.dataset.applyField))) { return; }
+                    hasEnabledChange = hasEnabledChange || checkbox.dataset.hasProposedChange === 'true';
+                    hasSelectedField = hasSelectedField || checkbox.checked;
+                });
+
+                notice.hidden = hasSelectedField;
+                notice.textContent = hasEnabledChange
+                    ? 'Select at least one enabled field to approve.'
+                    : 'This proposal has no enabled metadata changes to review. Enable the relevant fields in Settings or reject the proposal.';
+                if (!applyButton.dataset.originalLabel) {
+                    applyButton.disabled = !hasSelectedField;
+                    applyButton.setAttribute('aria-disabled', String(applyButton.disabled));
+                }
+            }
+
+            function syncReviewCardApplyStates() {
+                page.querySelectorAll('[data-review-proposal-card]').forEach(syncReviewCardApplyState);
             }
 
             function updatePager(infoId, previousId, nextId, startIndex, pageSize, totalCount, itemLabel) {
@@ -928,14 +971,18 @@
 
             function reviewField(card, proposal, key, label, multiline, controlType) {
                 var wrapper = element('div', 'ja-review-field');
+                markCollectionField(wrapper, proposalFieldVisibilityKey(key));
                 var checkboxLabel = element('label', 'emby-checkbox-label');
                 var checkbox = document.createElement('input');
                 checkbox.setAttribute('is', 'emby-checkbox');
                 checkbox.type = 'checkbox';
                 var original = proposal.original[key];
                 var proposed = proposal.proposed[key];
-                checkbox.checked = JSON.stringify(original) !== JSON.stringify(proposed);
+                var hasProposedChange = JSON.stringify(original) !== JSON.stringify(proposed);
+                checkbox.checked = hasProposedChange;
                 checkbox.dataset.applyField = key;
+                checkbox.dataset.hasProposedChange = String(hasProposedChange);
+                checkbox.addEventListener('change', function () { syncReviewCardApplyState(card); });
                 checkboxLabel.appendChild(checkbox);
                 checkboxLabel.appendChild(element('span', '', ' Apply ' + label.toLowerCase()));
                 wrapper.appendChild(checkboxLabel);
@@ -1008,24 +1055,29 @@
                     }
                     pending.forEach(function (proposal) {
                         var card = element('article', 'ja-card');
+                        card.setAttribute('data-review-proposal-card', 'true');
                         card.style.marginBottom = '1em';
                         card.appendChild(element('h3', '', proposal.collectionName));
                         card.appendChild(element('p', 'ja-muted', providerDisplayName(proposal.provider) + ' / ' + proposal.model + ' · ' + countLabel(proposal.contextItemCount, 'context item')));
                         if (proposal.communityRatingSource) {
-                            card.appendChild(element('p', 'ja-muted', 'Community rating source: ' + proposal.communityRatingSource));
+                            card.appendChild(markCollectionField(
+                                element('p', 'ja-muted', 'Community rating source: ' + proposal.communityRatingSource),
+                                'communityRating'));
                         }
                         if (proposal.releaseMetadataSource) {
-                            card.appendChild(element('p', 'ja-muted', 'Year and release date source: ' + proposal.releaseMetadataSource));
+                            card.appendChild(markCollectionField(
+                                element('p', 'ja-muted', 'Year and release date source: ' + proposal.releaseMetadataSource),
+                                'releaseMetadata'));
                         }
                         var current = element('dl', 'ja-meta');
-                        addMetadata(current, 'Current sort title', proposal.original.sortTitle);
-                        addMetadata(current, 'Current content rating', proposal.original.contentRating);
-                        addMetadata(current, 'Current community rating', proposal.original.communityRating);
-                        addMetadata(current, 'Current year', proposal.original.productionYear);
-                        addMetadata(current, 'Current release date', formatReleaseDate(proposal.original.premiereDate));
-                        addMetadata(current, 'Current overview', proposal.original.overview);
-                        addMetadata(current, 'Current genres', (proposal.original.genres || []).join(', '));
-                        addMetadata(current, 'Current tags', (proposal.original.tags || []).join(', '));
+                        addMetadata(current, 'Current sort title', proposal.original.sortTitle, 'sortTitle');
+                        addMetadata(current, 'Current content rating', proposal.original.contentRating, 'contentRating');
+                        addMetadata(current, 'Current community rating', proposal.original.communityRating, 'communityRating');
+                        addMetadata(current, 'Current year', proposal.original.productionYear, 'releaseMetadata');
+                        addMetadata(current, 'Current release date', formatReleaseDate(proposal.original.premiereDate), 'releaseMetadata');
+                        addMetadata(current, 'Current overview', proposal.original.overview, 'overview');
+                        addMetadata(current, 'Current genres', (proposal.original.genres || []).join(', '), 'genres');
+                        addMetadata(current, 'Current tags', (proposal.original.tags || []).join(', '), 'tags');
                         card.appendChild(current);
                         if (proposal.proposed.warnings && proposal.proposed.warnings.length) {
                             card.appendChild(element('p', 'ja-warning', proposal.proposed.warnings.join(' ')));
@@ -1038,9 +1090,13 @@
                         reviewField(card, proposal, 'overview', 'Overview', true);
                         reviewField(card, proposal, 'genres', 'Genres', false);
                         reviewField(card, proposal, 'tags', 'Tags', false);
+                        var noEnabledFields = element('p', 'ja-message ja-muted');
+                        noEnabledFields.setAttribute('data-no-enabled-review-fields', 'true');
+                        card.appendChild(noEnabledFields);
                         var actions = element('div', 'ja-actions');
                         var apply = element('button', 'raised button-submit', 'Approve selected fields');
                         apply.setAttribute('is', 'emby-button');
+                        apply.setAttribute('data-approve-proposal', 'true');
                         apply.type = 'button';
                         apply.addEventListener('click', function () { applyProposal(proposal.id, card, apply); });
                         var reject = element('button', 'raised', 'Reject proposal');
@@ -1051,6 +1107,7 @@
                         actions.appendChild(reject);
                         card.appendChild(actions);
                         list.appendChild(card);
+                        syncReviewCardApplyState(card);
                     });
                     restoreScroll();
                 }).catch(function (error) {
@@ -1060,7 +1117,12 @@
             }
 
             function applyProposal(proposalId, card, button, force) {
-                var getCheck = function (key) { return card.querySelector('[data-apply-field="' + key + '"]').checked; };
+                var getCheck = function (key) {
+                    var checkbox = card.querySelector('[data-apply-field="' + key + '"]');
+                    return isCollectionFieldVisible(proposalFieldVisibilityKey(key))
+                        && checkbox !== null
+                        && checkbox.checked;
+                };
                 var getValue = function (key) { return card.querySelector('[data-review-field="' + key + '"]').value; };
                 var payload = {
                     applySortTitle: getCheck('sortTitle'),
@@ -1131,7 +1193,7 @@
 
             function approveAllPending(button) {
                 if (pendingReviewCount <= 0
-                    || !window.confirm('Approve all ' + countLabel(pendingReviewCount, 'pending proposal') + ' using their stored generated values? Unsaved edits in the review cards will not be included. Stale proposals will remain pending.')) {
+                    || !window.confirm('Approve all ' + countLabel(pendingReviewCount, 'pending proposal') + ' using stored generated values for fields currently enabled in Settings? Unsaved edits in the review cards will not be included. Proposals with stale metadata or no enabled changes will remain pending.')) {
                     return;
                 }
 
@@ -1223,6 +1285,7 @@
                     releaseMetadata: Boolean(config.calculateReleaseMetadata)
                 };
                 applyCollectionFieldVisibility();
+                syncReviewCardApplyStates();
                 setValue('providerType', enumValue(config.providerType, ['openai', 'anthropic', 'openaicompatible']));
                 setValue('endpoint', config.endpoint);
                 setChecked('allowInsecureEndpoint', config.allowInsecureEndpoint);
