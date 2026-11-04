@@ -723,7 +723,6 @@
                 if (activity.lastAppliedAtUtc) {
                     parts.push('Last applied ' + formatActivityDate(activity.lastAppliedAtUtc));
                 }
-                if (activity.hasPendingReview) { parts.push('Pending review'); }
                 if (!status && activity.lastGenerationSucceeded === true && activity.lastGenerationHadChanges === false) {
                     parts.push('Last result: No changes suggested');
                 }
@@ -767,13 +766,14 @@
                     cancelButton.disabled = true;
                     cancelButton.setAttribute('aria-disabled', 'true');
                     if (wasActive) {
-                        generationStatus.textContent = activity.lastGenerationSucceeded === false
-                            ? 'Generation failed. You can retry it.'
-                            : (activity.lastGenerationHadChanges === false
-                                ? 'No metadata changes were suggested. You can generate again.'
-                                : (activity.hasPendingReview ? 'Proposal ready for review.' : ''));
+                        var proposalReady = activity.lastGenerationSucceeded === true
+                            && activity.lastGenerationHadChanges !== false
+                            && activity.hasPendingReview;
+                        generationStatus.textContent = proposalReady
+                            ? 'Proposal ready for review.'
+                            : '';
                         generationStatus.className = 'ja-message ja-generation-status'
-                            + (activity.lastGenerationSucceeded === false ? ' error' : ' success');
+                            + (proposalReady ? ' success' : '');
                     }
                 }
             }
