@@ -13,6 +13,7 @@ public sealed class GenerationQueueService : BackgroundService
 
     private readonly SemaphoreSlim _wakeSignal = new(0, MaximumWorkers);
     private readonly CollectionContextService _collectionContextService;
+    private readonly MetadataApplicationService _metadataApplicationService;
     private readonly ProposalService _proposalService;
     private readonly ProposalStore _proposalStore;
     private readonly ILogger<GenerationQueueService> _logger;
@@ -22,11 +23,13 @@ public sealed class GenerationQueueService : BackgroundService
     /// </summary>
     public GenerationQueueService(
         CollectionContextService collectionContextService,
+        MetadataApplicationService metadataApplicationService,
         ProposalService proposalService,
         ProposalStore proposalStore,
         ILogger<GenerationQueueService> logger)
     {
         _collectionContextService = collectionContextService;
+        _metadataApplicationService = metadataApplicationService;
         _proposalService = proposalService;
         _proposalStore = proposalStore;
         _logger = logger;
@@ -59,6 +62,27 @@ public sealed class GenerationQueueService : BackgroundService
     /// <inheritdoc />
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        try
+        {
+            var recoveredApplications = await _metadataApplicationService
+                .RecoverInterruptedAppliesAsync(stoppingToken)
+                .ConfigureAwait(false);
+            if (recoveredApplications > 0)
+            {
+                _logger.LogInformation(
+                    "Finalized {ProposalCount} interrupted JellyCAP metadata applications.",
+                    recoveredApplications);
+            }
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            return;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Failed to recover interrupted JellyCAP proposal applications.");
+        }
+
         try
         {
             var recovered = await _proposalStore.RecoverInterruptedGenerationJobsAsync(stoppingToken).ConfigureAwait(false);
@@ -151,18 +175,20 @@ public sealed class GenerationQueueService : BackgroundService
         }
         catch (Exception exception)
         {
+            var errorReference = Guid.NewGuid().ToString("N");
             _logger.LogError(
                 exception,
-                "JellyCAP generation job {GenerationJobId} failed for collection {CollectionName} ({CollectionId}).",
+                "JellyCAP generation job {GenerationJobId} failed for collection {CollectionName} ({CollectionId}). Error reference {ErrorReference}.",
                 job.Id,
                 job.CollectionName,
-                job.CollectionId);
+                job.CollectionId,
+                errorReference);
             try
             {
                 await _proposalStore.FailGenerationJobAsync(
                     job.Id,
                     job.CollectionId,
-                    exception.Message,
+                    GetSafeGenerationFailure(exception, errorReference),
                     stoppingToken).ConfigureAwait(false);
             }
             catch (Exception storageException) when (storageException is not OperationCanceledException)
@@ -177,6 +203,17 @@ public sealed class GenerationQueueService : BackgroundService
         {
             WakeWorkers();
         }
+    }
+
+    private static string GetSafeGenerationFailure(Exception exception, string errorReference)
+    {
+        return exception switch
+        {
+            ProviderRequestException => exception.Message,
+            KeyNotFoundException => "The collection no longer exists or is not available.",
+            GenerationCapacityException => "The provider request limit was in use. The job can be queued again.",
+            _ => $"Generation failed. See the Jellyfin log with error reference {errorReference}."
+        };
     }
 
     private void WakeWorkers()

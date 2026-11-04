@@ -6,9 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.7.0.0] - 2026-11-03
+
+### Added
+
+- Added durable apply-intent recovery so interrupted metadata approvals can be reconciled safely after Jellyfin restarts.
+
 ### Changed
 
 - Stabilized global, server queue, and settings status messages so updates no longer shift surrounding dashboard content; truncated text remains available as a tooltip.
+- Bulk approval and rejection now process pending proposals in bounded batches instead of loading the full queue into memory.
+- Unexpected dashboard errors now provide a Jellyfin log reference without exposing internal exception details.
+
+### Fixed
+
+- Made settings and stored-credential updates rollback-aware, prevented replacement keys from being deleted before they are written, and separated retention maintenance from the settings commit.
+- Persisted metadata-application intent before updating Jellyfin and finalized the proposal state with non-cancellable storage after a successful metadata write.
 
 ## [0.6.0.0] - 2026-11-02
 
@@ -98,7 +111,8 @@ Beta 1 is the first public test release of JellyCAP for Jellyfin 12.4.
 - This is beta software. Back up Jellyfin metadata and test with a small number of collections before using Queue All.
 - Generated metadata is always presented for administrator review before it can be applied.
 
-[Unreleased]: https://github.com/KristopherPeck/JellyCAP/compare/0.6.0.0...HEAD
+[Unreleased]: https://github.com/KristopherPeck/JellyCAP/compare/0.7.0.0...HEAD
+[0.7.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.7.0.0
 [0.6.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.6.0.0
 [0.5.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.5.0.0
 [0.4.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.4.0.0

@@ -89,7 +89,7 @@ The plugin repository method is preferred because Jellyfin creates and manages t
 1. Download `JellyCAP_<version>.zip` from the matching [GitHub release](https://github.com/KristopherPeck/JellyCAP/releases).
 2. Stop Jellyfin before changing plugin files.
 3. At the top level of Jellyfin's plugin directory, move old binary directories named `JellyCAP`, `JellyCAP_<old-version>`, or the legacy `JellyAnnotator` outside the plugin directory, or remove them. Do not remove the `configurations` directory, `jellycap.db`, `secrets.json`, or other JellyCAP data files.
-4. Create a versioned directory named `JellyCAP_<version>` using the exact four-part release version, such as `JellyCAP_0.6.0.0`.
+4. Create a versioned directory named `JellyCAP_<version>` using the exact four-part release version, such as `JellyCAP_0.7.0.0`.
 5. Extract the complete release archive directly into that versioned directory. Do not copy only the main plugin DLL.
 6. Start Jellyfin and confirm the installed version on the Plugins page.
 
@@ -216,7 +216,7 @@ dotnet publish -c Release
 The publish directory alone may omit managed SQLite dependencies and should not be used as a release archive. To create a complete candidate package on a trusted .NET 10 workstation, run:
 
 ```powershell
-pwsh .\scripts\package-release.ps1 -Version 0.6.0.0
+pwsh .\scripts\package-release.ps1 -Version 0.7.0.0
 ```
 
 The script stages the plugin, XML documentation, and required managed SQLite assemblies; verifies the plugin DLL version; excludes debug symbols and native SQLite assets; and creates the release ZIP plus MD5 and SHA-256 checksum files under `artifacts`. It also prints a manifest-ready UTC timestamp.
@@ -224,7 +224,7 @@ The script stages the plugin, XML documentation, and required managed SQLite ass
 To create the ZIP and update its existing version entry in `manifest.json` in one command, run:
 
 ```powershell
-pwsh .\scripts\package-release.ps1 -Version 0.6.0.0 -UpdateManifest
+pwsh .\scripts\package-release.ps1 -Version 0.7.0.0 -UpdateManifest
 ```
 
 Use `-UpdateManifest` only for the final candidate you intend to upload, then test the generated ZIP before publishing it. This option requires a fresh build and cannot be combined with `-SkipBuild`. The script refuses to update the manifest if the version entry is missing, duplicated, points to a differently named archive, or the built DLL version does not match the requested release.

@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-JellyCAP is currently beta software. Security fixes are provided for the latest `0.6.x` beta release only. Builds older than `0.6.0.0` are unsupported.
+JellyCAP is currently beta software. Security fixes are provided for the latest `0.7.x` beta release only. Builds older than `0.7.0.0` are unsupported.
 
 ## Reporting a vulnerability
 

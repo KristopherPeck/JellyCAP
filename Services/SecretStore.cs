@@ -84,6 +84,26 @@ public sealed class SecretStore
         }
     }
 
+    /// <summary>
+    /// Captures the stored credential so a multi-store settings update can be rolled back.
+    /// Environment-provided credentials are intentionally excluded.
+    /// </summary>
+    internal async Task<string?> CaptureStoredKeyAsync(CancellationToken cancellationToken)
+    {
+        var storedKey = await ReadStoredKeyAsync(cancellationToken).ConfigureAwait(false);
+        return string.IsNullOrWhiteSpace(storedKey) ? null : storedKey;
+    }
+
+    /// <summary>
+    /// Restores a previously captured stored credential.
+    /// </summary>
+    internal Task RestoreStoredKeyAsync(string? apiKey, CancellationToken cancellationToken)
+    {
+        return string.IsNullOrWhiteSpace(apiKey)
+            ? ClearAsync(cancellationToken)
+            : WriteAsync(apiKey, cancellationToken);
+    }
+
     private async Task<string> ReadStoredKeyAsync(CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);

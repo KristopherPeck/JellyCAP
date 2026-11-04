@@ -16,6 +16,8 @@ namespace Jellyfin.Plugin.JellyCAP.Controllers;
 [Route("JellyCAP")]
 public sealed class JellyCAPController : ControllerBase
 {
+    private static readonly SemaphoreSlim SettingsUpdateGate = new(1, 1);
+
     private readonly CollectionContextService _collectionContextService;
     private readonly MetadataApplicationService _metadataApplicationService;
     private readonly ProposalService _proposalService;
@@ -75,10 +77,13 @@ public sealed class JellyCAPController : ControllerBase
     [RequestSizeLimit(64 * 1024)]
     [ProducesResponseType<SettingsResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<SettingsResponse>> UpdateSettings(
         [FromBody] SettingsUpdateRequest request,
         CancellationToken cancellationToken)
     {
+        await SettingsUpdateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var settingsCommitted = false;
         try
         {
             var configuration = SettingsValidator.Validate(request.Configuration);
@@ -87,33 +92,105 @@ public sealed class JellyCAPController : ControllerBase
                 : SecretStore.ValidateApiKey(request.ApiKey);
             var plugin = Plugin.Instance
                 ?? throw new InvalidOperationException("JellyCAP is not initialized.");
-            plugin.UpdateConfiguration(configuration);
+            var previousConfiguration = plugin.Configuration.Copy();
+            var changesStoredKey = request.ClearStoredApiKey || replacementApiKey is not null;
+            var previousStoredKey = changesStoredKey
+                ? await _secretStore.CaptureStoredKeyAsync(cancellationToken).ConfigureAwait(false)
+                : null;
+            var configurationUpdateAttempted = false;
 
-            if (request.ClearStoredApiKey)
+            try
             {
-                await _secretStore.ClearAsync(cancellationToken).ConfigureAwait(false);
+                if (replacementApiKey is not null)
+                {
+                    // Replacement supersedes the clear flag so the existing key is never deleted first.
+                    await _secretStore.WriteAsync(replacementApiKey, cancellationToken).ConfigureAwait(false);
+                }
+                else if (request.ClearStoredApiKey)
+                {
+                    await _secretStore.ClearAsync(cancellationToken).ConfigureAwait(false);
+                }
+
+                configurationUpdateAttempted = true;
+                plugin.UpdateConfiguration(configuration);
+                settingsCommitted = true;
+            }
+            catch
+            {
+                if (changesStoredKey)
+                {
+                    try
+                    {
+                        await _secretStore.RestoreStoredKeyAsync(previousStoredKey, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception rollbackException)
+                    {
+                        _logger.LogCritical(
+                            rollbackException,
+                            "JellyCAP could not restore the previous stored API key after a settings update failed.");
+                    }
+                }
+
+                try
+                {
+                    if (configurationUpdateAttempted)
+                    {
+                        plugin.UpdateConfiguration(previousConfiguration);
+                    }
+                }
+                catch (Exception rollbackException)
+                {
+                    _logger.LogCritical(
+                        rollbackException,
+                        "JellyCAP could not restore the previous plugin configuration after a settings update failed.");
+                }
+
+                throw;
             }
 
-            if (replacementApiKey is not null)
+            try
             {
-                await _secretStore.WriteAsync(replacementApiKey, cancellationToken).ConfigureAwait(false);
+                await _proposalStore.PruneAsync(cancellationToken).ConfigureAwait(false);
             }
-
-            await _proposalStore.PruneAsync(cancellationToken).ConfigureAwait(false);
+            catch (Exception exception) when (exception is not OperationCanceledException)
+            {
+                // Retention is maintenance, not part of committing the user's settings.
+                _logger.LogWarning(exception, "JellyCAP settings were saved, but completed proposal retention could not run.");
+            }
 
             return await GetSettings(cancellationToken).ConfigureAwait(false);
         }
-        catch (ArgumentException exception)
+        catch (ArgumentException exception) when (!settingsCommitted)
         {
             _logger.LogWarning(exception, "JellyCAP settings were rejected as invalid.");
-            return BadRequest(new ProblemDetails { Title = "Invalid settings", Detail = exception.Message });
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Invalid settings",
+                Detail = "One or more settings are invalid. Review the provider, endpoint, model, enabled fields, environment-variable name, and numeric limits."
+            });
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "Failed to save JellyCAP settings.");
+            var errorReference = CreateErrorReference();
+            _logger.LogError(
+                exception,
+                settingsCommitted
+                    ? "JellyCAP settings were saved, but their effective credential status could not be loaded. Error reference {ErrorReference}."
+                    : "Failed to save JellyCAP settings. Error reference {ErrorReference}.",
+                errorReference);
             return StatusCode(
                 StatusCodes.Status500InternalServerError,
-                new ProblemDetails { Title = "Settings could not be saved", Detail = exception.Message });
+                settingsCommitted
+                    ? new ProblemDetails
+                    {
+                        Title = "Settings were saved, but their status could not be loaded",
+                        Detail = $"The new settings are active. Reload the page; if the problem continues, see the Jellyfin log with error reference {errorReference}."
+                    }
+                    : CreateInternalError("Settings could not be saved", errorReference));
+        }
+        finally
+        {
+            SettingsUpdateGate.Release();
         }
     }
 
@@ -137,14 +214,33 @@ public sealed class JellyCAPController : ControllerBase
             _logger.LogWarning(exception, "JellyCAP rejected a provider test because the concurrency limit was reached.");
             return StatusCode(
                 StatusCodes.Status429TooManyRequests,
+                new ConnectionTestResponse
+                {
+                    Success = false,
+                    Message = "The provider request limit is currently in use. Try again after an active request finishes."
+                });
+        }
+        catch (ProviderRequestException exception)
+        {
+            _logger.LogWarning(exception, "JellyCAP provider connection test was rejected by the configured endpoint.");
+            return StatusCode(
+                StatusCodes.Status502BadGateway,
                 new ConnectionTestResponse { Success = false, Message = exception.Message });
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "JellyCAP provider connection test failed.");
+            var errorReference = CreateErrorReference();
+            _logger.LogError(
+                exception,
+                "JellyCAP provider connection test failed. Error reference {ErrorReference}.",
+                errorReference);
             return StatusCode(
                 StatusCodes.Status502BadGateway,
-                new ConnectionTestResponse { Success = false, Message = exception.Message });
+                new ConnectionTestResponse
+                {
+                    Success = false,
+                    Message = $"Provider connection failed. Verify the endpoint, model, credentials, and provider availability. See the Jellyfin log with error reference {errorReference}."
+                });
         }
     }
 
@@ -174,10 +270,14 @@ public sealed class JellyCAPController : ControllerBase
         }
         catch (Exception exception)
         {
-            _logger.LogError(exception, "Failed to list Jellyfin collections for JellyCAP.");
+            var errorReference = CreateErrorReference();
+            _logger.LogError(
+                exception,
+                "Failed to list Jellyfin collections for JellyCAP. Error reference {ErrorReference}.",
+                errorReference);
             return StatusCode(
                 StatusCodes.Status500InternalServerError,
-                new ProblemDetails { Title = "Collections could not be loaded", Detail = exception.Message });
+                CreateInternalError("Collections could not be loaded", errorReference));
         }
     }
 
@@ -214,7 +314,11 @@ public sealed class JellyCAPController : ControllerBase
         catch (KeyNotFoundException exception)
         {
             _logger.LogWarning(exception, "JellyCAP collection {CollectionId} was not found.", collectionId);
-            return NotFound(new ProblemDetails { Title = "Collection not found", Detail = exception.Message });
+            return NotFound(new ProblemDetails
+            {
+                Title = "Collection not found",
+                Detail = "The requested collection no longer exists or is not available."
+            });
         }
     }
 
@@ -237,14 +341,23 @@ public sealed class JellyCAPController : ControllerBase
         catch (KeyNotFoundException exception)
         {
             _logger.LogWarning(exception, "JellyCAP collection {CollectionId} was not found during generation.", collectionId);
-            return NotFound(new ProblemDetails { Title = "Collection not found", Detail = exception.Message });
+            return NotFound(new ProblemDetails
+            {
+                Title = "Collection not found",
+                Detail = "The requested collection no longer exists or is not available."
+            });
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "JellyCAP could not queue collection {CollectionId}.", collectionId);
+            var errorReference = CreateErrorReference();
+            _logger.LogError(
+                exception,
+                "JellyCAP could not queue collection {CollectionId}. Error reference {ErrorReference}.",
+                collectionId,
+                errorReference);
             return StatusCode(
                 StatusCodes.Status500InternalServerError,
-                new ProblemDetails { Title = "Generation could not be queued", Detail = exception.Message });
+                CreateInternalError("Generation could not be queued", errorReference));
         }
     }
 
@@ -272,10 +385,14 @@ public sealed class JellyCAPController : ControllerBase
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            _logger.LogError(exception, "JellyCAP could not queue the filtered collection batch.");
+            var errorReference = CreateErrorReference();
+            _logger.LogError(
+                exception,
+                "JellyCAP could not queue the filtered collection batch. Error reference {ErrorReference}.",
+                errorReference);
             return StatusCode(
                 StatusCodes.Status500InternalServerError,
-                new ProblemDetails { Title = "Collections could not be queued", Detail = exception.Message });
+                CreateInternalError("Collections could not be queued", errorReference));
         }
     }
 
@@ -371,6 +488,7 @@ public sealed class JellyCAPController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
     [ProducesResponseType(StatusCodes.Status409Conflict)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<MetadataProposal>> ApplyProposal(
         Guid proposalId,
         [FromBody] ApplyProposalRequest request,
@@ -386,17 +504,41 @@ public sealed class JellyCAPController : ControllerBase
         catch (KeyNotFoundException exception)
         {
             _logger.LogWarning(exception, "JellyCAP proposal {ProposalId} or its collection was not found during approval.", proposalId);
-            return NotFound(new ProblemDetails { Title = "Proposal or collection not found", Detail = exception.Message });
+            return NotFound(new ProblemDetails
+            {
+                Title = "Proposal or collection not found",
+                Detail = "The requested proposal or collection no longer exists."
+            });
         }
         catch (StaleProposalException exception)
         {
             _logger.LogWarning(exception, "JellyCAP proposal {ProposalId} is stale.", proposalId);
-            return Conflict(new ProblemDetails { Title = "Proposal is stale", Detail = exception.Message });
+            return Conflict(new ProblemDetails
+            {
+                Title = "Proposal is stale",
+                Detail = "The collection metadata changed after this proposal was generated. Review the current metadata before forcing an update."
+            });
         }
         catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
         {
             _logger.LogError(exception, "JellyCAP proposal {ProposalId} could not be applied.", proposalId);
-            return BadRequest(new ProblemDetails { Title = "Proposal could not be applied", Detail = exception.Message });
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Proposal could not be applied",
+                Detail = "The proposal is no longer pending or contains a value that cannot be applied."
+            });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            var errorReference = CreateErrorReference();
+            _logger.LogError(
+                exception,
+                "JellyCAP proposal {ProposalId} could not be applied. Error reference {ErrorReference}.",
+                proposalId,
+                errorReference);
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                CreateInternalError("Proposal could not be applied", errorReference));
         }
     }
 
@@ -407,17 +549,32 @@ public sealed class JellyCAPController : ControllerBase
     /// <returns>Counts and bounded failure details for the bulk operation.</returns>
     [HttpPost("Proposals/ApplyPending")]
     [ProducesResponseType<BulkProposalApprovalResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<BulkProposalApprovalResponse>> ApplyPendingProposals(
         CancellationToken cancellationToken)
     {
-        var result = await _metadataApplicationService
-            .ApplyAllPendingAsync(cancellationToken)
-            .ConfigureAwait(false);
-        _logger.LogInformation(
-            "JellyCAP bulk approval applied {AppliedProposalCount} pending proposals and left {FailedProposalCount} pending after failures.",
-            result.AppliedCount,
-            result.FailedCount);
-        return Ok(result);
+        try
+        {
+            var result = await _metadataApplicationService
+                .ApplyAllPendingAsync(cancellationToken)
+                .ConfigureAwait(false);
+            _logger.LogInformation(
+                "JellyCAP bulk approval applied {AppliedProposalCount} pending proposals and left {FailedProposalCount} pending after failures.",
+                result.AppliedCount,
+                result.FailedCount);
+            return Ok(result);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            var errorReference = CreateErrorReference();
+            _logger.LogError(
+                exception,
+                "JellyCAP bulk approval failed. Error reference {ErrorReference}.",
+                errorReference);
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                CreateInternalError("Pending proposals could not be applied", errorReference));
+        }
     }
 
     /// <summary>
@@ -427,6 +584,7 @@ public sealed class JellyCAPController : ControllerBase
     [ProducesResponseType<MetadataProposal>(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<MetadataProposal>> RejectProposal(
         Guid proposalId,
         CancellationToken cancellationToken)
@@ -438,12 +596,32 @@ public sealed class JellyCAPController : ControllerBase
         catch (KeyNotFoundException exception)
         {
             _logger.LogWarning(exception, "JellyCAP proposal {ProposalId} was not found during rejection.", proposalId);
-            return NotFound(new ProblemDetails { Title = "Proposal not found", Detail = exception.Message });
+            return NotFound(new ProblemDetails
+            {
+                Title = "Proposal not found",
+                Detail = "The requested proposal no longer exists."
+            });
         }
         catch (InvalidOperationException exception)
         {
             _logger.LogError(exception, "JellyCAP proposal {ProposalId} could not be rejected.", proposalId);
-            return BadRequest(new ProblemDetails { Title = "Proposal could not be rejected", Detail = exception.Message });
+            return BadRequest(new ProblemDetails
+            {
+                Title = "Proposal could not be rejected",
+                Detail = "Only a pending proposal can be rejected."
+            });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            var errorReference = CreateErrorReference();
+            _logger.LogError(
+                exception,
+                "JellyCAP proposal {ProposalId} could not be rejected. Error reference {ErrorReference}.",
+                proposalId,
+                errorReference);
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                CreateInternalError("Proposal could not be rejected", errorReference));
         }
     }
 
@@ -452,15 +630,44 @@ public sealed class JellyCAPController : ControllerBase
     /// </summary>
     [HttpPost("Proposals/RejectPending")]
     [ProducesResponseType<BulkProposalRejectionResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
     public async Task<ActionResult<BulkProposalRejectionResponse>> RejectPendingProposals(
         CancellationToken cancellationToken)
     {
-        var rejectedCount = await _metadataApplicationService
-            .RejectAllPendingAsync(cancellationToken)
-            .ConfigureAwait(false);
-        _logger.LogInformation(
-            "JellyCAP rejected {ProposalCount} pending proposals in bulk.",
-            rejectedCount);
-        return Ok(new BulkProposalRejectionResponse { RejectedCount = rejectedCount });
+        try
+        {
+            var rejectedCount = await _metadataApplicationService
+                .RejectAllPendingAsync(cancellationToken)
+                .ConfigureAwait(false);
+            _logger.LogInformation(
+                "JellyCAP rejected {ProposalCount} pending proposals in bulk.",
+                rejectedCount);
+            return Ok(new BulkProposalRejectionResponse { RejectedCount = rejectedCount });
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            var errorReference = CreateErrorReference();
+            _logger.LogError(
+                exception,
+                "JellyCAP bulk rejection failed. Error reference {ErrorReference}.",
+                errorReference);
+            return StatusCode(
+                StatusCodes.Status500InternalServerError,
+                CreateInternalError("Pending proposals could not be rejected", errorReference));
+        }
+    }
+
+    private static string CreateErrorReference()
+    {
+        return Guid.NewGuid().ToString("N");
+    }
+
+    private static ProblemDetails CreateInternalError(string title, string errorReference)
+    {
+        return new ProblemDetails
+        {
+            Title = title,
+            Detail = $"An internal error occurred. See the Jellyfin log with error reference {errorReference}."
+        };
     }
 }

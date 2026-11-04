@@ -613,15 +613,23 @@ public sealed class AiProviderClient
             .ToArray();
     }
 
-    private sealed class ProviderRequestException : Exception
-    {
-        public ProviderRequestException(HttpStatusCode statusCode, string message)
-            : base(message)
-        {
-            StatusCode = statusCode;
-        }
+}
 
-        public HttpStatusCode StatusCode { get; }
+/// <summary>
+/// Represents a provider HTTP failure whose message has been bounded and credential-redacted.
+/// </summary>
+internal sealed class ProviderRequestException : Exception
+{
+    /// <summary>
+    /// Initializes a new instance of the <see cref="ProviderRequestException"/> class.
+    /// </summary>
+    public ProviderRequestException(HttpStatusCode statusCode, string message)
+        : base(message)
+    {
+        StatusCode = statusCode;
     }
+
+    /// <summary>Gets the provider HTTP status code.</summary>
+    public HttpStatusCode StatusCode { get; }
 }
 

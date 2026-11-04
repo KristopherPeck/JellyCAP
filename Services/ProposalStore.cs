@@ -12,7 +12,7 @@ namespace Jellyfin.Plugin.JellyCAP.Services;
 /// </summary>
 public sealed class ProposalStore
 {
-    private const int DatabaseVersion = 3;
+    private const int DatabaseVersion = 4;
     private const string LegacyMigrationKey = "legacy-proposals-json-v1";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -134,21 +134,53 @@ public sealed class ProposalStore
     }
 
     /// <summary>
-    /// Gets a snapshot of every pending proposal for a bulk review decision.
+    /// Gets one keyset-paginated batch of pending proposals for a bulk review decision.
     /// </summary>
+    /// <param name="beforeCreatedAtUtc">Exclusive creation-time cursor, or null for the first batch.</param>
+    /// <param name="beforeId">Exclusive identifier cursor paired with <paramref name="beforeCreatedAtUtc"/>.</param>
+    /// <param name="limit">Maximum batch size.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>Pending proposals ordered from newest to oldest.</returns>
-    public async Task<MetadataProposal[]> ListPendingAsync(CancellationToken cancellationToken)
+    /// <returns>A bounded pending-proposal batch ordered from newest to oldest.</returns>
+    public async Task<MetadataProposal[]> ListPendingBatchAsync(
+        DateTimeOffset? beforeCreatedAtUtc,
+        Guid? beforeId,
+        int limit,
+        CancellationToken cancellationToken)
     {
+        if (beforeCreatedAtUtc.HasValue != beforeId.HasValue)
+        {
+            throw new ArgumentException("Both pending-proposal cursor values must be supplied together.");
+        }
+
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await using var connection = await OpenConnectionUnsafeAsync(cancellationToken).ConfigureAwait(false);
             await PruneAndLogUnsafeAsync(connection, cancellationToken).ConfigureAwait(false);
-            var proposals = new List<MetadataProposal>();
+            var boundedLimit = Math.Clamp(limit, 1, 100);
+            var proposals = new List<MetadataProposal>(boundedLimit);
             await using var command = connection.CreateCommand();
-            command.CommandText = "SELECT id, payload_json FROM proposals WHERE status = $status ORDER BY created_at_utc DESC, id DESC;";
+            command.CommandText = beforeCreatedAtUtc.HasValue && beforeId.HasValue
+                ? """
+                    SELECT id, payload_json
+                    FROM proposals
+                    WHERE status = $status
+                      AND (created_at_utc < $beforeCreatedAtUtc
+                        OR (created_at_utc = $beforeCreatedAtUtc AND id < $beforeId))
+                    ORDER BY created_at_utc DESC, id DESC
+                    LIMIT $limit;
+                    """
+                : "SELECT id, payload_json FROM proposals WHERE status = $status ORDER BY created_at_utc DESC, id DESC LIMIT $limit;";
             command.Parameters.AddWithValue("$status", (int)ProposalStatus.Pending);
+            command.Parameters.AddWithValue("$limit", boundedLimit);
+            if (beforeCreatedAtUtc.HasValue && beforeId.HasValue)
+            {
+                command.Parameters.AddWithValue(
+                    "$beforeCreatedAtUtc",
+                    beforeCreatedAtUtc.Value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+                command.Parameters.AddWithValue("$beforeId", FormatGuid(beforeId.Value));
+            }
+
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -159,7 +191,7 @@ public sealed class ProposalStore
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            LogStorageFailure(exception, "list pending proposals for bulk approval");
+            LogStorageFailure(exception, "list a pending proposal batch for bulk review");
             throw;
         }
         finally
@@ -169,48 +201,51 @@ public sealed class ProposalStore
     }
 
     /// <summary>
-    /// Atomically marks every pending proposal as rejected.
+    /// Atomically marks a bounded batch of pending proposals as rejected.
     /// </summary>
+    /// <param name="proposals">Pending proposals to reject.</param>
     /// <param name="decidedAtUtc">Shared rejection timestamp.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The number of proposals rejected.</returns>
-    public async Task<int> RejectAllPendingAsync(
+    public async Task<int> RejectPendingBatchAsync(
+        IReadOnlyCollection<MetadataProposal> proposals,
         DateTimeOffset decidedAtUtc,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(proposals);
+        if (proposals.Count > 100)
+        {
+            throw new ArgumentOutOfRangeException(nameof(proposals), "A rejection batch cannot exceed 100 proposals.");
+        }
+
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
             await using var connection = await OpenConnectionUnsafeAsync(cancellationToken).ConfigureAwait(false);
             using var transaction = connection.BeginTransaction();
-            var proposals = new List<MetadataProposal>();
-            await using (var command = connection.CreateCommand())
-            {
-                command.Transaction = transaction;
-                command.CommandText = "SELECT id, payload_json FROM proposals WHERE status = $status;";
-                command.Parameters.AddWithValue("$status", (int)ProposalStatus.Pending);
-                await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-                while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-                {
-                    proposals.Add(DeserializeProposal(reader.GetString(0), reader.GetString(1)));
-                }
-            }
-
+            var rejectedCount = 0;
             foreach (var proposal in proposals)
             {
+                if (proposal.Status != ProposalStatus.Pending)
+                {
+                    continue;
+                }
+
                 proposal.Status = ProposalStatus.Rejected;
                 proposal.DecidedAtUtc = decidedAtUtc;
                 await SaveUnsafeAsync(connection, transaction, proposal, cancellationToken).ConfigureAwait(false);
+                await DeleteApplyIntentUnsafeAsync(connection, transaction, proposal.Id, cancellationToken).ConfigureAwait(false);
+                rejectedCount++;
             }
 
             var removed = await ApplyRetentionUnsafeAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
             transaction.Commit();
             LogPruned(removed);
-            return proposals.Count;
+            return rejectedCount;
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            LogStorageFailure(exception, "reject all pending proposals");
+            LogStorageFailure(exception, "reject a pending proposal batch");
             throw;
         }
         finally
@@ -263,6 +298,11 @@ public sealed class ProposalStore
             await using var connection = await OpenConnectionUnsafeAsync(cancellationToken).ConfigureAwait(false);
             using var transaction = connection.BeginTransaction();
             await SaveUnsafeAsync(connection, transaction, proposal, cancellationToken).ConfigureAwait(false);
+            if (proposal.Status != ProposalStatus.Pending)
+            {
+                await DeleteApplyIntentUnsafeAsync(connection, transaction, proposal.Id, cancellationToken).ConfigureAwait(false);
+            }
+
             var removed = await ApplyRetentionUnsafeAsync(
                 connection,
                 transaction,
@@ -273,6 +313,141 @@ public sealed class ProposalStore
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
             LogStorageFailure(exception, "save a proposal");
+            throw;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Durably records the intended final metadata before Jellyfin is updated.
+    /// </summary>
+    internal async Task BeginApplyAsync(
+        MetadataProposal proposal,
+        GeneratedMetadata intended,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(proposal);
+        ArgumentNullException.ThrowIfNull(intended);
+        if (proposal.Status != ProposalStatus.Pending)
+        {
+            throw new InvalidOperationException("Only a pending proposal can begin application.");
+        }
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var connection = await OpenConnectionUnsafeAsync(cancellationToken).ConfigureAwait(false);
+            using var transaction = connection.BeginTransaction();
+            await using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                INSERT INTO proposal_apply_intents (
+                    proposal_id,
+                    collection_id,
+                    started_at_utc,
+                    intended_json)
+                SELECT
+                    $proposalId,
+                    $collectionId,
+                    $startedAtUtc,
+                    $intendedJson
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM proposals
+                    WHERE id = $proposalId AND status = $pending)
+                ON CONFLICT(proposal_id) DO UPDATE SET
+                    collection_id = excluded.collection_id,
+                    started_at_utc = excluded.started_at_utc,
+                    intended_json = excluded.intended_json;
+                """;
+            command.Parameters.AddWithValue("$proposalId", FormatGuid(proposal.Id));
+            command.Parameters.AddWithValue("$collectionId", FormatGuid(proposal.CollectionId));
+            command.Parameters.AddWithValue("$startedAtUtc", DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture));
+            command.Parameters.AddWithValue("$intendedJson", JsonSerializer.Serialize(intended, JsonOptions));
+            command.Parameters.AddWithValue("$pending", (int)ProposalStatus.Pending);
+            if (await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false) != 1)
+            {
+                throw new InvalidOperationException("The proposal is no longer pending.");
+            }
+
+            transaction.Commit();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogStorageFailure(exception, "record a proposal apply intent");
+            throw;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Lists a bounded batch of interrupted proposal applications.
+    /// </summary>
+    internal async Task<ProposalApplyIntent[]> ListApplyIntentsAsync(
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var connection = await OpenConnectionUnsafeAsync(cancellationToken).ConfigureAwait(false);
+            var intents = new List<ProposalApplyIntent>();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT proposal_id, collection_id, started_at_utc, intended_json
+                FROM proposal_apply_intents
+                ORDER BY started_at_utc, proposal_id
+                LIMIT $limit;
+                """;
+            command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 100));
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                intents.Add(new ProposalApplyIntent
+                {
+                    ProposalId = Guid.ParseExact(reader.GetString(0), "N"),
+                    CollectionId = Guid.ParseExact(reader.GetString(1), "N"),
+                    StartedAtUtc = DateTimeOffset.Parse(reader.GetString(2), CultureInfo.InvariantCulture),
+                    Intended = JsonSerializer.Deserialize<GeneratedMetadata>(reader.GetString(3), JsonOptions)
+                        ?? throw new InvalidDataException("A stored proposal apply intent has an empty metadata payload.")
+                });
+            }
+
+            return intents.ToArray();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogStorageFailure(exception, "list proposal apply intents");
+            throw;
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Removes an apply intent after recovery determines no finalization is needed.
+    /// </summary>
+    internal async Task DeleteApplyIntentAsync(Guid proposalId, CancellationToken cancellationToken)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await using var connection = await OpenConnectionUnsafeAsync(cancellationToken).ConfigureAwait(false);
+            using var transaction = connection.BeginTransaction();
+            await DeleteApplyIntentUnsafeAsync(connection, transaction, proposalId, cancellationToken).ConfigureAwait(false);
+            transaction.Commit();
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            LogStorageFailure(exception, "remove a proposal apply intent");
             throw;
         }
         finally
@@ -298,6 +473,7 @@ public sealed class ProposalStore
             await using var connection = await OpenConnectionUnsafeAsync(cancellationToken).ConfigureAwait(false);
             using var transaction = connection.BeginTransaction();
             await SaveUnsafeAsync(connection, transaction, proposal, cancellationToken).ConfigureAwait(false);
+            await DeleteApplyIntentUnsafeAsync(connection, transaction, proposal.Id, cancellationToken).ConfigureAwait(false);
             await RecordAppliedUnsafeAsync(
                 connection,
                 transaction,
@@ -1035,6 +1211,13 @@ public sealed class ProposalStore
                     value TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS proposal_apply_intents (
+                    proposal_id TEXT NOT NULL PRIMARY KEY,
+                    collection_id TEXT NOT NULL,
+                    started_at_utc TEXT NOT NULL,
+                    intended_json TEXT NOT NULL
+                );
+
                 CREATE TABLE IF NOT EXISTS generation_jobs (
                     id TEXT NOT NULL PRIMARY KEY,
                     collection_id TEXT NOT NULL,
@@ -1159,7 +1342,7 @@ public sealed class ProposalStore
 
         await using (var setVersionCommand = connection.CreateCommand())
         {
-            setVersionCommand.CommandText = "PRAGMA user_version = 3;";
+            setVersionCommand.CommandText = "PRAGMA user_version = 4;";
             await setVersionCommand.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -1303,6 +1486,19 @@ public sealed class ProposalStore
                 ? proposal.DecidedAtUtc.Value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)
                 : DBNull.Value);
         command.Parameters.AddWithValue("$payloadJson", JsonSerializer.Serialize(proposal, JsonOptions));
+        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task DeleteApplyIntentUnsafeAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        Guid proposalId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "DELETE FROM proposal_apply_intents WHERE proposal_id = $proposalId;";
+        command.Parameters.AddWithValue("$proposalId", FormatGuid(proposalId));
         await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
 
@@ -1459,4 +1655,22 @@ public sealed class ProposalStore
     {
         public List<MetadataProposal> Proposals { get; set; } = [];
     }
+}
+
+/// <summary>
+/// Durable intent used to reconcile an interrupted cross-store metadata application.
+/// </summary>
+internal sealed class ProposalApplyIntent
+{
+    /// <summary>Gets or sets the proposal identifier.</summary>
+    public Guid ProposalId { get; set; }
+
+    /// <summary>Gets or sets the collection identifier.</summary>
+    public Guid CollectionId { get; set; }
+
+    /// <summary>Gets or sets when application began.</summary>
+    public DateTimeOffset StartedAtUtc { get; set; }
+
+    /// <summary>Gets or sets the intended complete collection metadata.</summary>
+    public GeneratedMetadata Intended { get; set; } = new();
 }

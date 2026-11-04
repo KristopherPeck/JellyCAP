@@ -10,6 +10,8 @@ namespace Jellyfin.Plugin.JellyCAP.Services;
 /// </summary>
 public sealed class MetadataApplicationService
 {
+    private const int BulkBatchSize = 50;
+
     private readonly SemaphoreSlim _decisionGate = new(1, 1);
     private readonly CollectionContextService _collectionContextService;
     private readonly ProposalStore _proposalStore;
@@ -76,15 +78,27 @@ public sealed class MetadataApplicationService
                 Plugin.Instance?.Configuration
                 ?? throw new InvalidOperationException("JellyCAP is not initialized."));
 
+            var intended = new MetadataSnapshot
+            {
+                SortTitle = current.SortTitle,
+                ContentRating = current.ContentRating,
+                CommunityRating = current.CommunityRating,
+                ProductionYear = current.ProductionYear,
+                PremiereDate = current.PremiereDate,
+                Overview = current.Overview,
+                Genres = current.Genres,
+                Tags = current.Tags
+            };
+
             if (request.ApplySortTitle)
             {
-                collection.ForcedSortName = NormalizeScalar(request.SortTitle, 500);
+                intended.SortTitle = NormalizeScalar(request.SortTitle, 500);
             }
 
             if (request.ApplyContentRating)
             {
                 var contentRating = NormalizeScalar(request.ContentRating, 100);
-                collection.OfficialRating = string.IsNullOrWhiteSpace(contentRating) ? null : contentRating;
+                intended.ContentRating = contentRating;
             }
 
             if (request.ApplyCommunityRating)
@@ -97,7 +111,7 @@ public sealed class MetadataApplicationService
                         "Community rating must be between 0 and 10.");
                 }
 
-                collection.CommunityRating = request.CommunityRating.HasValue
+                intended.CommunityRating = request.CommunityRating.HasValue
                     ? (float)Math.Round(request.CommunityRating.Value, 1, MidpointRounding.AwayFromZero)
                     : null;
             }
@@ -111,50 +125,98 @@ public sealed class MetadataApplicationService
                         "Production year must be between 1 and 9999.");
                 }
 
-                collection.ProductionYear = request.ProductionYear;
+                intended.ProductionYear = request.ProductionYear;
             }
 
             if (request.ApplyPremiereDate)
             {
-                collection.PremiereDate = request.PremiereDate.HasValue
+                intended.PremiereDate = request.PremiereDate.HasValue
                     ? DateTime.SpecifyKind(request.PremiereDate.Value.Date, DateTimeKind.Utc)
                     : null;
             }
 
             if (request.ApplyOverview)
             {
-                collection.Overview = NormalizeOverview(request.Overview, configuration.MaximumOverviewCharacters);
+                intended.Overview = NormalizeOverview(request.Overview, configuration.MaximumOverviewCharacters);
             }
 
             if (request.ApplyGenres)
             {
-                collection.Genres = NormalizeList(request.Genres, 500);
+                intended.Genres = NormalizeList(request.Genres, 500);
             }
 
             if (request.ApplyTags)
             {
-                collection.Tags = NormalizeList(request.Tags, 500);
+                intended.Tags = NormalizeList(request.Tags, 500);
+            }
+
+            var intendedMetadata = ToGeneratedMetadata(intended, proposal.Proposed.Warnings);
+            await _proposalStore.BeginApplyAsync(proposal, intendedMetadata, cancellationToken).ConfigureAwait(false);
+
+            if (request.ApplySortTitle)
+            {
+                collection.ForcedSortName = intended.SortTitle;
+            }
+
+            if (request.ApplyContentRating)
+            {
+                collection.OfficialRating = string.IsNullOrWhiteSpace(intended.ContentRating)
+                    ? null
+                    : intended.ContentRating;
+            }
+
+            if (request.ApplyCommunityRating)
+            {
+                collection.CommunityRating = intended.CommunityRating;
+            }
+
+            if (request.ApplyProductionYear)
+            {
+                collection.ProductionYear = intended.ProductionYear;
+            }
+
+            if (request.ApplyPremiereDate)
+            {
+                collection.PremiereDate = intended.PremiereDate;
+            }
+
+            if (request.ApplyOverview)
+            {
+                collection.Overview = intended.Overview;
+            }
+
+            if (request.ApplyGenres)
+            {
+                collection.Genres = intended.Genres;
+            }
+
+            if (request.ApplyTags)
+            {
+                collection.Tags = intended.Tags;
             }
 
             collection.OnMetadataChanged();
             await collection.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
 
             var applied = MetadataFingerprint.Snapshot(collection);
-            proposal.Proposed = new GeneratedMetadata
-            {
-                SortTitle = applied.SortTitle,
-                ContentRating = applied.ContentRating,
-                CommunityRating = applied.CommunityRating,
-                ProductionYear = applied.ProductionYear,
-                PremiereDate = applied.PremiereDate,
-                Overview = applied.Overview,
-                Genres = applied.Genres,
-                Tags = applied.Tags,
-                Warnings = proposal.Proposed.Warnings
-            };
+            proposal.Proposed = ToGeneratedMetadata(applied, proposal.Proposed.Warnings);
             proposal.Status = ProposalStatus.Applied;
             proposal.DecidedAtUtc = DateTimeOffset.UtcNow;
-            await _proposalStore.SaveAppliedAsync(proposal, cancellationToken).ConfigureAwait(false);
+            // The Jellyfin write is irreversible. Persist its outcome even if the HTTP request was cancelled.
+            try
+            {
+                await _proposalStore.SaveAppliedAsync(proposal, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                _logger.LogCritical(
+                    exception,
+                    "Jellyfin metadata was updated for collection {CollectionId}, but JellyCAP could not finalize proposal {ProposalId}. The durable apply intent was retained for recovery.",
+                    proposal.CollectionId,
+                    proposal.Id);
+                throw;
+            }
+
             return proposal;
         }
         finally
@@ -196,9 +258,35 @@ public sealed class MetadataApplicationService
         await _decisionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return await _proposalStore.RejectAllPendingAsync(
-                DateTimeOffset.UtcNow,
-                cancellationToken).ConfigureAwait(false);
+            var rejectedCount = 0;
+            DateTimeOffset? beforeCreatedAtUtc = null;
+            Guid? beforeId = null;
+            while (true)
+            {
+                var proposals = await _proposalStore.ListPendingBatchAsync(
+                    beforeCreatedAtUtc,
+                    beforeId,
+                    BulkBatchSize,
+                    cancellationToken).ConfigureAwait(false);
+                if (proposals.Length == 0)
+                {
+                    break;
+                }
+
+                var last = proposals[^1];
+                beforeCreatedAtUtc = last.CreatedAtUtc;
+                beforeId = last.Id;
+                rejectedCount += await _proposalStore.RejectPendingBatchAsync(
+                    proposals,
+                    DateTimeOffset.UtcNow,
+                    cancellationToken).ConfigureAwait(false);
+                if (proposals.Length < BulkBatchSize)
+                {
+                    break;
+                }
+            }
+
+            return rejectedCount;
         }
         finally
         {
@@ -214,45 +302,69 @@ public sealed class MetadataApplicationService
     /// <returns>Counts and bounded failure details for the bulk operation.</returns>
     public async Task<BulkProposalApprovalResponse> ApplyAllPendingAsync(CancellationToken cancellationToken)
     {
-        var proposals = await _proposalStore.ListPendingAsync(cancellationToken).ConfigureAwait(false);
         var configuration = SettingsValidator.Validate(
             Plugin.Instance?.Configuration
             ?? throw new InvalidOperationException("JellyCAP is not initialized."));
         var failures = new List<BulkProposalApprovalFailure>();
         var failedCount = 0;
         var appliedCount = 0;
-        foreach (var proposal in proposals)
+        DateTimeOffset? beforeCreatedAtUtc = null;
+        Guid? beforeId = null;
+        while (true)
         {
-            try
+            var proposals = await _proposalStore.ListPendingBatchAsync(
+                beforeCreatedAtUtc,
+                beforeId,
+                BulkBatchSize,
+                cancellationToken).ConfigureAwait(false);
+            if (proposals.Length == 0)
             {
-                await ApplyAsync(
-                    proposal.Id,
-                    CreateApplyGeneratedRequest(proposal, configuration),
-                    cancellationToken).ConfigureAwait(false);
-                appliedCount++;
+                break;
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+
+            var last = proposals[^1];
+            beforeCreatedAtUtc = last.CreatedAtUtc;
+            beforeId = last.Id;
+            foreach (var proposal in proposals)
             {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                failedCount++;
-                _logger.LogError(
-                    exception,
-                    "JellyCAP proposal {ProposalId} could not be applied during bulk approval for collection {CollectionName} ({CollectionId}).",
-                    proposal.Id,
-                    proposal.CollectionName,
-                    proposal.CollectionId);
-                if (failures.Count < 25)
+                try
                 {
-                    failures.Add(new BulkProposalApprovalFailure
-                    {
-                        ProposalId = proposal.Id,
-                        CollectionName = proposal.CollectionName,
-                        Message = BoundFailureMessage(exception.Message)
-                    });
+                    await ApplyAsync(
+                        proposal.Id,
+                        CreateApplyGeneratedRequest(proposal, configuration),
+                        cancellationToken).ConfigureAwait(false);
+                    appliedCount++;
                 }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    failedCount++;
+                    var errorReference = Guid.NewGuid().ToString("N");
+                    _logger.LogError(
+                        exception,
+                        "JellyCAP proposal {ProposalId} could not be applied during bulk approval for collection {CollectionName} ({CollectionId}). Error reference {ErrorReference}.",
+                        proposal.Id,
+                        proposal.CollectionName,
+                        proposal.CollectionId,
+                        errorReference);
+                    if (failures.Count < 25)
+                    {
+                        failures.Add(new BulkProposalApprovalFailure
+                        {
+                            ProposalId = proposal.Id,
+                            CollectionName = proposal.CollectionName,
+                            Message = GetSafeBulkFailureMessage(exception, errorReference)
+                        });
+                    }
+                }
+            }
+
+            if (proposals.Length < BulkBatchSize)
+            {
+                break;
             }
         }
 
@@ -262,6 +374,83 @@ public sealed class MetadataApplicationService
             FailedCount = failedCount,
             Failures = failures
         };
+    }
+
+    /// <summary>
+    /// Reconciles durable apply intents left by a process interruption or post-write storage failure.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The number of proposals finalized as applied.</returns>
+    public async Task<int> RecoverInterruptedAppliesAsync(CancellationToken cancellationToken)
+    {
+        await _decisionGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var recoveredCount = 0;
+            while (true)
+            {
+                var intents = await _proposalStore.ListApplyIntentsAsync(
+                    BulkBatchSize,
+                    cancellationToken).ConfigureAwait(false);
+                if (intents.Length == 0)
+                {
+                    break;
+                }
+
+                foreach (var intent in intents)
+                {
+                    var proposal = await _proposalStore.GetAsync(intent.ProposalId, cancellationToken).ConfigureAwait(false);
+                    if (proposal is null || proposal.Status != ProposalStatus.Pending)
+                    {
+                        await _proposalStore.DeleteApplyIntentAsync(intent.ProposalId, cancellationToken).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    try
+                    {
+                        var collection = _collectionContextService.GetCollection(intent.CollectionId);
+                        var current = MetadataFingerprint.Snapshot(collection);
+                        var intended = ToMetadataSnapshot(intent.Intended);
+                        if (string.Equals(
+                            MetadataFingerprint.Compute(current),
+                            MetadataFingerprint.Compute(intended),
+                            StringComparison.Ordinal))
+                        {
+                            proposal.Proposed = intent.Intended;
+                            proposal.Status = ProposalStatus.Applied;
+                            proposal.DecidedAtUtc = intent.StartedAtUtc;
+                            await _proposalStore.SaveAppliedAsync(proposal, CancellationToken.None).ConfigureAwait(false);
+                            recoveredCount++;
+                            _logger.LogInformation(
+                                "Recovered interrupted JellyCAP application for proposal {ProposalId} and collection {CollectionId}.",
+                                proposal.Id,
+                                proposal.CollectionId);
+                        }
+                        else
+                        {
+                            await _proposalStore.DeleteApplyIntentAsync(intent.ProposalId, cancellationToken).ConfigureAwait(false);
+                            _logger.LogWarning(
+                                "Cleared interrupted JellyCAP application intent for proposal {ProposalId}; collection metadata did not match the intended result, so the proposal remains pending.",
+                                proposal.Id);
+                        }
+                    }
+                    catch (KeyNotFoundException)
+                    {
+                        await _proposalStore.DeleteApplyIntentAsync(intent.ProposalId, cancellationToken).ConfigureAwait(false);
+                        _logger.LogWarning(
+                            "Cleared interrupted JellyCAP application intent for proposal {ProposalId} because collection {CollectionId} no longer exists.",
+                            proposal.Id,
+                            intent.CollectionId);
+                    }
+                }
+            }
+
+            return recoveredCount;
+        }
+        finally
+        {
+            _decisionGate.Release();
+        }
     }
 
     private static ApplyProposalRequest CreateApplyGeneratedRequest(
@@ -297,10 +486,48 @@ public sealed class MetadataApplicationService
         };
     }
 
-    private static string BoundFailureMessage(string? message)
+    private static string GetSafeBulkFailureMessage(Exception exception, string errorReference)
     {
-        var normalized = message?.Trim() ?? "The proposal could not be applied.";
-        return normalized.Length <= 500 ? normalized : normalized[..500].TrimEnd();
+        return exception switch
+        {
+            StaleProposalException => "The collection metadata changed after this proposal was generated.",
+            KeyNotFoundException => "The proposal or its collection no longer exists.",
+            ArgumentException => "The proposal contains a value that cannot be applied.",
+            _ => $"The proposal could not be applied. See the Jellyfin log with error reference {errorReference}."
+        };
+    }
+
+    private static GeneratedMetadata ToGeneratedMetadata(
+        MetadataSnapshot snapshot,
+        string[] warnings)
+    {
+        return new GeneratedMetadata
+        {
+            SortTitle = snapshot.SortTitle,
+            ContentRating = snapshot.ContentRating,
+            CommunityRating = snapshot.CommunityRating,
+            ProductionYear = snapshot.ProductionYear,
+            PremiereDate = snapshot.PremiereDate,
+            Overview = snapshot.Overview,
+            Genres = snapshot.Genres,
+            Tags = snapshot.Tags,
+            Warnings = warnings
+        };
+    }
+
+    private static MetadataSnapshot ToMetadataSnapshot(GeneratedMetadata metadata)
+    {
+        return new MetadataSnapshot
+        {
+            SortTitle = metadata.SortTitle,
+            ContentRating = metadata.ContentRating,
+            CommunityRating = metadata.CommunityRating,
+            ProductionYear = metadata.ProductionYear,
+            PremiereDate = metadata.PremiereDate,
+            Overview = metadata.Overview,
+            Genres = metadata.Genres,
+            Tags = metadata.Tags
+        };
     }
 
     private async Task<MetadataProposal> GetPendingAsync(Guid proposalId, CancellationToken cancellationToken)

@@ -9,6 +9,14 @@
         "category":  "General",
         "versions":  [
                          {
+                             "version":  "0.7.0.0",
+                             "changelog":  "Beta 7 release with durable approval recovery, bounded bulk reviews, rollback-safe settings, and stable dashboard status messages",
+                             "targetAbi":  "12.4.0.0",
+                             "sourceUrl":  "https://github.com/KristopherPeck/JellyCAP/releases/download/0.7.0.0/JellyCAP_0.7.0.0.zip",
+                             "checksum":  "F8CB934C0AADBE77A884065D3886262D",
+                             "timestamp":  "2026-11-04T00:30:03Z"
+                         },
+                         {
                              "version":  "0.6.0.0",
                              "changelog":  "Beta 6 release with dashboard and pending-review refinements plus safer manual installation guidance",
                              "targetAbi":  "12.4.0.0",
