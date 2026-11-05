@@ -259,14 +259,29 @@ public sealed class JellyCAPController : ControllerBase
     {
         try
         {
-            var activity = await _proposalStore.GetCollectionActivityAsync(cancellationToken).ConfigureAwait(false);
-            return Ok(_collectionContextService.ListCollections(
+            var activity = trackingFilter == CollectionTrackingFilter.All
+                ? new Dictionary<Guid, CollectionGenerationActivity>()
+                : await _proposalStore.GetCollectionActivityAsync(cancellationToken).ConfigureAwait(false);
+            var result = _collectionContextService.ListCollections(
                 search,
                 trackingFilter,
                 activity,
                 sortOrder,
                 startIndex,
-                limit));
+                limit);
+            if (trackingFilter == CollectionTrackingFilter.All && result.Items.Count > 0)
+            {
+                var visibleActivity = await _proposalStore.GetCollectionActivityAsync(
+                    result.Items.Select(collection => collection.Id).ToArray(),
+                    cancellationToken).ConfigureAwait(false);
+                foreach (var collection in result.Items)
+                {
+                    collection.Activity = visibleActivity.GetValueOrDefault(collection.Id)
+                        ?? new CollectionGenerationActivity { CollectionId = collection.Id };
+                }
+            }
+
+            return Ok(result);
         }
         catch (Exception exception)
         {
@@ -291,7 +306,9 @@ public sealed class JellyCAPController : ControllerBase
         [FromQuery] Guid[] collectionIds)
     {
         var requestedIds = collectionIds.Distinct().Take(100).ToArray();
-        var activity = await _proposalStore.GetCollectionActivityAsync(cancellationToken).ConfigureAwait(false);
+        var activity = await _proposalStore.GetCollectionActivityAsync(
+            requestedIds,
+            cancellationToken).ConfigureAwait(false);
         return Ok(requestedIds
             .Select(collectionId => activity.GetValueOrDefault(collectionId)
                 ?? new CollectionGenerationActivity { CollectionId = collectionId })

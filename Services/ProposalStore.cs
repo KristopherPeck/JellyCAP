@@ -812,9 +812,28 @@ public sealed class ProposalStore
     /// <summary>
     /// Gets durable collection activity, including active jobs and pending reviews.
     /// </summary>
-    public async Task<IReadOnlyDictionary<Guid, CollectionGenerationActivity>> GetCollectionActivityAsync(
+    public Task<IReadOnlyDictionary<Guid, CollectionGenerationActivity>> GetCollectionActivityAsync(
         CancellationToken cancellationToken)
     {
+        return GetCollectionActivityAsync(null, cancellationToken);
+    }
+
+    /// <summary>
+    /// Gets durable collection activity for the requested collections, including active jobs and pending reviews.
+    /// </summary>
+    /// <param name="collectionIds">Collection identifiers to load, or null to load all recorded activity.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Activity indexed by collection identifier.</returns>
+    public async Task<IReadOnlyDictionary<Guid, CollectionGenerationActivity>> GetCollectionActivityAsync(
+        IReadOnlyCollection<Guid>? collectionIds,
+        CancellationToken cancellationToken)
+    {
+        var requestedIds = collectionIds?.Distinct().ToArray();
+        if (requestedIds is { Length: 0 })
+        {
+            return new Dictionary<Guid, CollectionGenerationActivity>();
+        }
+
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -822,7 +841,10 @@ public sealed class ProposalStore
             var result = new Dictionary<Guid, CollectionGenerationActivity>();
             await using (var historyCommand = connection.CreateCommand())
             {
-                historyCommand.CommandText = "SELECT collection_id, generation_count, last_attempted_at_utc, last_generated_at_utc, last_applied_at_utc, last_generation_succeeded, last_generation_error, last_generation_had_changes FROM collection_generation_history;";
+                var collectionPredicate = AddCollectionIdPredicate(historyCommand, requestedIds);
+                historyCommand.CommandText = "SELECT collection_id, generation_count, last_attempted_at_utc, last_generated_at_utc, last_applied_at_utc, last_generation_succeeded, last_generation_error, last_generation_had_changes FROM collection_generation_history"
+                    + (collectionPredicate.Length > 0 ? " WHERE " + collectionPredicate : string.Empty)
+                    + ";";
                 await using var reader = await historyCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
@@ -843,7 +865,10 @@ public sealed class ProposalStore
 
             await using (var jobsCommand = connection.CreateCommand())
             {
-                jobsCommand.CommandText = "SELECT collection_id, status FROM generation_jobs WHERE status IN ($queued, $running);";
+                var collectionPredicate = AddCollectionIdPredicate(jobsCommand, requestedIds);
+                jobsCommand.CommandText = "SELECT collection_id, status FROM generation_jobs WHERE status IN ($queued, $running)"
+                    + (collectionPredicate.Length > 0 ? " AND " + collectionPredicate : string.Empty)
+                    + ";";
                 jobsCommand.Parameters.AddWithValue("$queued", (int)GenerationJobStatus.Queued);
                 jobsCommand.Parameters.AddWithValue("$running", (int)GenerationJobStatus.Running);
                 await using var reader = await jobsCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -857,7 +882,10 @@ public sealed class ProposalStore
 
             await using (var pendingCommand = connection.CreateCommand())
             {
-                pendingCommand.CommandText = "SELECT DISTINCT collection_id FROM proposals WHERE status = $pending;";
+                var collectionPredicate = AddCollectionIdPredicate(pendingCommand, requestedIds);
+                pendingCommand.CommandText = "SELECT DISTINCT collection_id FROM proposals WHERE status = $pending"
+                    + (collectionPredicate.Length > 0 ? " AND " + collectionPredicate : string.Empty)
+                    + ";";
                 pendingCommand.Parameters.AddWithValue("$pending", (int)ProposalStatus.Pending);
                 await using var reader = await pendingCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -1071,6 +1099,26 @@ public sealed class ProposalStore
         return value;
     }
 
+    private static string AddCollectionIdPredicate(
+        SqliteCommand command,
+        IReadOnlyList<Guid>? collectionIds)
+    {
+        if (collectionIds is null)
+        {
+            return string.Empty;
+        }
+
+        var parameterNames = new string[collectionIds.Count];
+        for (var index = 0; index < collectionIds.Count; index++)
+        {
+            var parameterName = "$collectionId" + index.ToString(CultureInfo.InvariantCulture);
+            parameterNames[index] = parameterName;
+            command.Parameters.AddWithValue(parameterName, FormatGuid(collectionIds[index]));
+        }
+
+        return "collection_id IN (" + string.Join(", ", parameterNames) + ")";
+    }
+
     private static DateTimeOffset? ReadTimestamp(SqliteDataReader reader, int ordinal)
     {
         return reader.IsDBNull(ordinal) ? null : ParseTimestamp(reader.GetString(ordinal));
@@ -1202,6 +1250,9 @@ public sealed class ProposalStore
 
                 CREATE INDEX IF NOT EXISTS idx_proposals_status_created
                     ON proposals (status, created_at_utc DESC);
+
+                CREATE INDEX IF NOT EXISTS idx_proposals_status_collection
+                    ON proposals (status, collection_id);
 
                 CREATE INDEX IF NOT EXISTS idx_proposals_completed_decided
                     ON proposals (status, decided_at_utc DESC, created_at_utc DESC);
