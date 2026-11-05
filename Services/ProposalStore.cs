@@ -27,6 +27,8 @@ public sealed class ProposalStore
 
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly ILogger<ProposalStore> _logger;
+    private readonly string? _databasePath;
+    private readonly string? _legacyStorePath;
     private bool _initialized;
 
     /// <summary>
@@ -36,6 +38,24 @@ public sealed class ProposalStore
     public ProposalStore(ILogger<ProposalStore> logger)
     {
         _logger = logger;
+    }
+
+    /// <summary>
+    /// Initializes a store with explicit paths for isolated automated tests.
+    /// </summary>
+    /// <param name="logger">Jellyfin logger.</param>
+    /// <param name="databasePath">SQLite database path.</param>
+    /// <param name="legacyStorePath">Optional legacy JSON store path.</param>
+    internal ProposalStore(
+        ILogger<ProposalStore> logger,
+        string databasePath,
+        string? legacyStorePath = null)
+    {
+        _logger = logger;
+        _databasePath = Path.GetFullPath(databasePath);
+        _legacyStorePath = legacyStorePath is null
+            ? Path.Combine(Path.GetDirectoryName(_databasePath)!, "proposals.json")
+            : Path.GetFullPath(legacyStorePath);
     }
 
     /// <summary>
@@ -1145,15 +1165,17 @@ public sealed class ProposalStore
         return normalized.Length <= maximumLength ? normalized : normalized[..maximumLength];
     }
 
-    private static string GetDatabasePath()
+    private string GetDatabasePath()
     {
-        return Plugin.Instance?.GetDataFilePath("jellycap.db")
+        return _databasePath
+            ?? Plugin.Instance?.GetDataFilePath("jellycap.db")
             ?? throw new InvalidOperationException("The JellyCAP data folder is not available.");
     }
 
-    private static string GetLegacyStorePath()
+    private string GetLegacyStorePath()
     {
-        return Plugin.Instance?.GetDataFilePath("proposals.json")
+        return _legacyStorePath
+            ?? Plugin.Instance?.GetDataFilePath("proposals.json")
             ?? throw new InvalidOperationException("The JellyCAP data folder is not available.");
     }
 

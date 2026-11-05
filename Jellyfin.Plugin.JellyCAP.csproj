@@ -41,6 +41,10 @@
     <EmbeddedResource Include="Web\dashboard.html" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Remove="tests\**\*.cs" />
+  </ItemGroup>
+
   <Target Name="RejectBundledSqliteNativeRuntime" AfterTargets="Publish">
     <ItemGroup>
       <BundledSqliteNativeRuntime Include="$(PublishDir)**\e_sqlite3.dll;$(PublishDir)**\libe_sqlite3.so;$(PublishDir)**\libe_sqlite3.dylib" />

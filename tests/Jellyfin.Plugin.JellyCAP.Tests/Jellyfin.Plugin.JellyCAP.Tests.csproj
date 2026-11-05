@@ -1,0 +1,24 @@
+<Project Sdk="MSTest.Sdk/4.5.1">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Jellyfin.Plugin.JellyCAP.Tests</AssemblyName>
+    <RootNamespace>Jellyfin.Plugin.JellyCAP.Tests</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <TestingPlatformCommandLineArguments>--minimum-expected-tests 37</TestingPlatformCommandLineArguments>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Jellyfin.Plugin.JellyCAP.csproj" />
+    <PackageReference Include="Jellyfin.Controller" Version="12.4.0" PrivateAssets="all" />
+    <PackageReference Include="Jellyfin.Model" Version="12.4.0" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.14" PrivateAssets="all" />
+    <PackageReference Include="SQLitePCLRaw.core" Version="2.1.14" PrivateAssets="all" />
+    <PackageReference Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.14" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>

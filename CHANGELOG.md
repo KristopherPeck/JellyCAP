@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Added an automated test project and read-only GitHub Actions workflow covering configuration security rules, metadata fingerprint compatibility, and isolated SQLite queue persistence and recovery. Release packaging now requires the complete suite to pass before building.
+
 ### Changed
 
 - Collection pages and dashboard polling now query durable activity only for the visible collection IDs instead of loading every recorded collection status.

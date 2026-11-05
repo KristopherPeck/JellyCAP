@@ -19,6 +19,7 @@ $ErrorActionPreference = 'Stop'
 
 $repositoryRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $projectPath = Join-Path $repositoryRoot 'Jellyfin.Plugin.JellyCAP.csproj'
+$testProjectPath = Join-Path $repositoryRoot 'tests\Jellyfin.Plugin.JellyCAP.Tests\Jellyfin.Plugin.JellyCAP.Tests.csproj'
 $artifactsRoot = Join-Path $repositoryRoot 'artifacts'
 
 [xml]$project = Get-Content -Raw -LiteralPath $projectPath
@@ -135,6 +136,26 @@ foreach ($path in @($stageRoot, $archivePath, $checksumPath, $sha256Path)) {
         Remove-Item -LiteralPath $path -Recurse -Force
     }
 }
+
+if (-not (Test-Path -LiteralPath $testProjectPath -PathType Leaf)) {
+    throw "Automated test project was not found: $testProjectPath"
+}
+
+Write-Host 'Running the complete JellyCAP automated test suite before building the release package...'
+Push-Location -LiteralPath $repositoryRoot
+try {
+    & dotnet test --project $testProjectPath --configuration $Configuration
+    $testExitCode = $LASTEXITCODE
+}
+finally {
+    Pop-Location
+}
+
+if ($testExitCode -ne 0) {
+    throw "Automated tests failed with exit code $testExitCode. The release package was not built."
+}
+
+Write-Host 'All automated tests passed. Continuing with the release build.'
 
 if (-not $SkipBuild) {
     Assert-SafeArtifactPath -Path $publishRoot

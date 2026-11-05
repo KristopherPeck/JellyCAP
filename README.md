@@ -208,6 +208,14 @@ For reproducible problems, open a [bug report](https://github.com/KristopherPeck
 
 JellyCAP is a conventional .NET Jellyfin server plugin. It does not require Node.js or Docker. Use a security-patched .NET 10 SDK (10.0.14 or newer for this beta).
 
+Automated tests live in `tests/Jellyfin.Plugin.JellyCAP.Tests` in this repository. They use synthetic data and do not require Jellyfin, provider credentials, or internet access at runtime. Run them on a trusted development workstation with:
+
+```powershell
+dotnet test --project .\tests\Jellyfin.Plugin.JellyCAP.Tests\Jellyfin.Plugin.JellyCAP.Tests.csproj -c Release
+```
+
+Pull requests and pushes to `main` run the same suite in a read-only GitHub Actions workflow. The beta packaging workflow also requires the tests to pass before creating a candidate archive. SQLite integration tests use isolated temporary databases and a test-only native SQLite asset that is excluded from JellyCAP release packages.
+
 ```powershell
 dotnet restore
 dotnet publish -c Release
@@ -219,7 +227,7 @@ The publish directory alone may omit managed SQLite dependencies and should not 
 pwsh .\scripts\package-release.ps1 -Version 0.7.0.0
 ```
 
-The script stages the plugin, XML documentation, and required managed SQLite assemblies; verifies the plugin DLL version; excludes debug symbols and native SQLite assets; and creates the release ZIP plus MD5 and SHA-256 checksum files under `artifacts`. It also prints a manifest-ready UTC timestamp.
+The script first requires all automated tests to pass, then stages the plugin, XML documentation, and required managed SQLite assemblies; verifies the plugin DLL version; excludes debug symbols and native SQLite assets; and creates the release ZIP plus MD5 and SHA-256 checksum files under `artifacts`. It also prints a manifest-ready UTC timestamp. The test gate also applies when `-SkipBuild` is used, so packaging cannot bypass validation by reusing existing publish output.
 
 To create the ZIP and update its existing version entry in `manifest.json` in one command, run:
 
