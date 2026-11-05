@@ -9,6 +9,14 @@
         "category":  "General",
         "versions":  [
                          {
+                             "version":  "0.8.0.0",
+                             "changelog":  "Beta 8 feature-complete candidate with automated release validation, optimized collection activity queries, and final settings layout refinements",
+                             "targetAbi":  "12.4.0.0",
+                             "sourceUrl":  "https://github.com/KristopherPeck/JellyCAP/releases/download/0.8.0.0/JellyCAP_0.8.0.0.zip",
+                             "checksum":  "FE304E0D30956581627110DBA747B930",
+                             "timestamp":  "2026-11-05T03:44:16Z"
+                         },
+                         {
                              "version":  "0.7.0.0",
                              "changelog":  "Beta 7 release with durable approval recovery, bounded bulk reviews, rollback-safe settings, and stable dashboard status messages",
                              "targetAbi":  "12.4.0.0",

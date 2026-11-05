@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.8.0.0] - 2026-11-04
+
 ### Added
 
 - Added an automated test project and read-only GitHub Actions workflow covering configuration security rules, metadata fingerprint compatibility, and isolated SQLite queue persistence and recovery. Release packaging now requires the complete suite to pass before building.
@@ -120,7 +122,8 @@ Beta 1 is the first public test release of JellyCAP for Jellyfin 12.4.
 - This is beta software. Back up Jellyfin metadata and test with a small number of collections before using Queue All.
 - Generated metadata is always presented for administrator review before it can be applied.
 
-[Unreleased]: https://github.com/KristopherPeck/JellyCAP/compare/0.7.0.0...HEAD
+[Unreleased]: https://github.com/KristopherPeck/JellyCAP/compare/0.8.0.0...HEAD
+[0.8.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.8.0.0
 [0.7.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.7.0.0
 [0.6.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.6.0.0
 [0.5.0.0]: https://github.com/KristopherPeck/JellyCAP/releases/tag/0.5.0.0
