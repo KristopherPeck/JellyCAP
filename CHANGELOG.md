@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - Collection pages and dashboard polling now query durable activity only for the visible collection IDs instead of loading every recorded collection status.
+- Settings text areas now share a full-width, equal-height layout, and the remaining checkbox options are grouped with the primary settings toggles.
 
 ## [0.7.0.0] - 2026-11-03
 

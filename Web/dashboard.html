@@ -55,6 +55,7 @@
         .ja-message.success { color: #69f0ae; }
         .ja-settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 1.25em; }
         .ja-settings .wide { grid-column: 1 / -1; }
+        .ja-settings textarea { display: block; width: 100%; min-height: 8em; box-sizing: border-box; resize: vertical; }
         .ja-checks { display: flex; flex-wrap: wrap; gap: 1.25em; margin: .75em 0 1.25em; }
         .ja-generation-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); gap: 1em 1.25em; }
         .ja-generation-options .emby-checkbox-label { margin: 0; }
@@ -222,6 +223,14 @@
                             <label class="emby-checkbox-label"><input is="emby-checkbox" id="allowSpoilers" type="checkbox" aria-describedby="helpAllowSpoilers"><span>Allow major spoilers</span></label>
                             <span id="helpAllowSpoilers" class="ja-info" tabindex="0" title="Allows the AI-generated overview to mention endings, deaths, and late-story revelations when useful."><span aria-hidden="true">i</span><span class="ja-sr-only">Allows the AI-generated overview to mention endings, deaths, and late-story revelations when useful.</span></span>
                         </div>
+                        <div class="ja-option">
+                            <label class="emby-checkbox-label"><input is="emby-checkbox" id="openReviewAfterGeneration" type="checkbox" aria-describedby="helpOpenReviewAfterGeneration"><span>Open pending reviews after generating a proposal</span></label>
+                            <span id="helpOpenReviewAfterGeneration" class="ja-info" tabindex="0" title="Opens the Pending reviews tab after the server generation queue finishes and at least one proposal was requested from this dashboard."><span aria-hidden="true">i</span><span class="ja-sr-only">Opens the Pending reviews tab after the server generation queue finishes and at least one proposal was requested from this dashboard.</span></span>
+                        </div>
+                        <div class="ja-option">
+                            <label class="emby-checkbox-label"><input is="emby-checkbox" id="clearStoredApiKey" type="checkbox" aria-describedby="helpClearStoredApiKey"><span>Remove stored API key when saving</span></label>
+                            <span id="helpClearStoredApiKey" class="ja-info" tabindex="0" title="Deletes the API key stored by JellyCAP when settings are saved. An allowed environment-variable key remains available to the Jellyfin process."><span aria-hidden="true">i</span><span class="ja-sr-only">Deletes the API key stored by JellyCAP when settings are saved. An allowed environment-variable key remains available to the Jellyfin process.</span></span>
+                        </div>
                     </div>
 
                     <div class="ja-settings">
@@ -320,7 +329,7 @@
                         </div>
                         <div class="inputContainer wide">
                             <label class="inputLabel inputLabelUnfocused" for="genreAllowList">Genre vocabulary</label>
-                            <textarea is="emby-input" id="genreAllowList" rows="4" placeholder="Comma- or newline-separated; blank uses genres found on child items"></textarea>
+                            <textarea is="emby-input" id="genreAllowList" rows="5" placeholder="Comma- or newline-separated; blank uses genres found on child items"></textarea>
                         </div>
                         <div class="inputContainer wide">
                             <label class="inputLabel inputLabelUnfocused" for="customInstructions">Additional generation instructions</label>
@@ -328,10 +337,6 @@
                         </div>
                     </div>
 
-                    <div class="ja-checks">
-                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="openReviewAfterGeneration" type="checkbox"><span>Open pending reviews after generating a proposal</span></label>
-                        <label class="emby-checkbox-label"><input is="emby-checkbox" id="clearStoredApiKey" type="checkbox"><span>Remove stored API key when saving</span></label>
-                    </div>
                     <div class="ja-actions">
                         <button is="emby-button" type="submit" class="raised button-submit">Save settings</button>
                         <button is="emby-button" type="button" class="raised" id="testConnection">Test connection</button>
